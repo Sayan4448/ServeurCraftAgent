@@ -1,0 +1,17 @@
+"""Palette et styles — thème sombre type launcher/panel d'admin."""
+
+BG = "#0e1116"
+PANEL = "#151a23"
+PANEL_2 = "#1b2230"
+HOVER = "#232d40"
+BORDER = "#2a3347"
+ACCENT = "#3b82f6"
+ACCENT_HOVER = "#2563eb"
+GREEN = "#22c55e"
+RED = "#ef4444"
+ORANGE = "#f59e0b"
+TEXT = "#e6e9ef"
+MUTED = "#8b94a7"
+
+FONT = "Segoe UI"
+FONT_MONO = "Consolas"

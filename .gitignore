@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Données locales de l'app
+data/settings.json          # contient la clé API Gemini
+servers/
+runtimes/
+*.jar
+*.part
