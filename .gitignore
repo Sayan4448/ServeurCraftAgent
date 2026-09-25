@@ -11,3 +11,6 @@ servers/
 runtimes/
 *.jar
 *.part
+build/
+dist/
+*.egg-info/

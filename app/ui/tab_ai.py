@@ -18,6 +18,13 @@ QUICK_PROMPTS = [
     "Change le MOTD et passe le serveur en mode aventure",
 ]
 
+_LABEL_TO_PROVIDER = {v: k for k, v in providers.PROVIDERS.items()}
+
+_ENTRY_STYLE = dict(fg_color=theme.PANEL_2, border_color=theme.BORDER,
+                    text_color=theme.TEXT)
+_MENU_STYLE = dict(fg_color=theme.PANEL_2, button_color=theme.ACCENT,
+                   button_hover_color=theme.ACCENT_HOVER, text_color=theme.TEXT)
+
 
 class AiTab(ctk.CTkFrame):
     def __init__(self, master):
@@ -25,6 +32,8 @@ class AiTab(ctk.CTkFrame):
         self.settings = load_settings()
         self._agents = {}
         self._busy = False
+        self._entries = {}
+        self._model_menus = {}
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
@@ -32,77 +41,45 @@ class AiTab(ctk.CTkFrame):
         # ------------------------------------------------------------- config
         cfg = ctk.CTkFrame(self, fg_color=theme.PANEL, corner_radius=10)
         cfg.grid(row=0, column=0, sticky="ew", pady=(0, 8))
-        cfg.grid_columnconfigure(1, weight=1)
 
         ctk.CTkLabel(cfg, text="Provider", text_color=theme.MUTED,
                      font=(theme.FONT, 12)).grid(
             row=0, column=0, padx=(14, 6), pady=10, sticky="w")
-        self.provider_seg = ctk.CTkSegmentedButton(
-            cfg, values=["Gemini API", "Ollama local"],
-            selected_color=theme.ACCENT,
-            selected_hover_color=theme.ACCENT_HOVER,
-            unselected_color=theme.PANEL_2,
-            unselected_hover_color=theme.HOVER,
-            command=self._provider_changed)
-        self.provider_seg.set(
-            "Ollama local" if self.settings["ai_provider"] == "ollama"
-            else "Gemini API")
-        self.provider_seg.grid(row=0, column=1, padx=6, pady=10, sticky="w")
+        self.provider_menu = ctk.CTkOptionMenu(
+            cfg, width=190, values=list(providers.PROVIDERS.values()),
+            **_MENU_STYLE, command=self._provider_changed)
+        self.provider_menu.set(
+            providers.PROVIDERS.get(
+                self.settings.get("ai_provider"), providers.PROVIDERS["gemini"]))
+        self.provider_menu.grid(row=0, column=1, padx=6, pady=10, sticky="w")
 
-        # panneau Gemini
-        self.gemini_box = ctk.CTkFrame(cfg, fg_color="transparent")
-        ctk.CTkLabel(self.gemini_box, text="Clé API", text_color=theme.MUTED,
-                     font=(theme.FONT, 12)).pack(side="left", padx=(0, 6))
-        self.key_entry = ctk.CTkEntry(
-            self.gemini_box, width=220, show="•",
-            placeholder_text="AIza…",
-            fg_color=theme.PANEL_2, border_color=theme.BORDER,
-            text_color=theme.TEXT)
-        self.key_entry.insert(0, self.settings.get("gemini_api_key", ""))
-        self.key_entry.pack(side="left", padx=4)
-        ctk.CTkLabel(self.gemini_box, text="Modèle", text_color=theme.MUTED,
-                     font=(theme.FONT, 12)).pack(side="left", padx=(10, 6))
-        self.gmodel_entry = ctk.CTkEntry(
-            self.gemini_box, width=150, fg_color=theme.PANEL_2,
-            border_color=theme.BORDER, text_color=theme.TEXT)
-        self.gmodel_entry.insert(0, self.settings.get("gemini_model", ""))
-        self.gmodel_entry.pack(side="left", padx=4)
+        self.fields_holder = ctk.CTkFrame(cfg, fg_color="transparent")
+        self.fields_holder.grid(row=0, column=2, padx=6, pady=10, sticky="w")
 
-        # panneau Ollama
-        self.ollama_box = ctk.CTkFrame(cfg, fg_color="transparent")
-        ctk.CTkLabel(self.ollama_box, text="URL", text_color=theme.MUTED,
-                     font=(theme.FONT, 12)).pack(side="left", padx=(0, 6))
-        self.ourl_entry = ctk.CTkEntry(
-            self.ollama_box, width=190, fg_color=theme.PANEL_2,
-            border_color=theme.BORDER, text_color=theme.TEXT)
-        self.ourl_entry.insert(0, self.settings.get("ollama_url", ""))
-        self.ourl_entry.pack(side="left", padx=4)
-        self.omodel_menu = ctk.CTkOptionMenu(
-            self.ollama_box, width=170,
-            values=[self.settings.get("ollama_model", "llama3.1")],
-            fg_color=theme.PANEL_2, button_color=theme.ACCENT,
-            button_hover_color=theme.ACCENT_HOVER, text_color=theme.TEXT)
-        self.omodel_menu.set(self.settings.get("ollama_model", "llama3.1"))
-        self.omodel_menu.pack(side="left", padx=4)
-        ctk.CTkButton(self.ollama_box, text="⟳", width=32,
-                      fg_color=theme.PANEL_2, hover_color=theme.HOVER,
-                      command=self._refresh_ollama_models).pack(side="left")
+        # panneaux par provider (affichés/masqués à la demande)
+        self.fields = {
+            "gemini": self._build_key_model(
+                "gemini_api_key", "gemini_model", "AIza…"),
+            "anthropic": self._build_key_model(
+                "anthropic_api_key", "anthropic_model", "sk-ant-…"),
+            "openai": self._build_openai(),
+            "ollama": self._build_local("ollama", "ollama_url"),
+            "lmstudio": self._build_local("lmstudio", "lmstudio_url"),
+            "custom": self._build_custom(),
+        }
+        self._provider_changed(self.provider_menu.get())
 
         # serveur cible
         ctk.CTkLabel(cfg, text="Serveur", text_color=theme.MUTED,
                      font=(theme.FONT, 12)).grid(row=0, column=3, padx=(16, 6))
         self.server_menu = ctk.CTkOptionMenu(
-            cfg, width=160, values=self._server_names(),
-            fg_color=theme.PANEL_2, button_color=theme.ACCENT,
-            button_hover_color=theme.ACCENT_HOVER, text_color=theme.TEXT,
-            command=lambda _v: None)
+            cfg, width=150, values=self._server_names(),
+            **_MENU_STYLE, command=lambda _v: None)
         self.server_menu.grid(row=0, column=4, padx=(0, 6), pady=10)
         ctk.CTkButton(cfg, text="⟳", width=32, fg_color=theme.PANEL_2,
                       hover_color=theme.HOVER,
                       command=self._refresh_servers).grid(
             row=0, column=5, padx=(0, 12))
-
-        self._provider_changed(self.provider_seg.get())
 
         # ------------------------------------------------------------- chat
         self.chat_frame = ctk.CTkScrollableFrame(self, fg_color=theme.PANEL,
@@ -115,9 +92,7 @@ class AiTab(ctk.CTkFrame):
         bottom.grid_columnconfigure(1, weight=1)
 
         self.quick_menu = ctk.CTkOptionMenu(
-            bottom, width=210, values=QUICK_PROMPTS,
-            fg_color=theme.PANEL_2, button_color=theme.ACCENT,
-            button_hover_color=theme.ACCENT_HOVER, text_color=theme.TEXT,
+            bottom, width=210, values=QUICK_PROMPTS, **_MENU_STYLE,
             command=self._quick_pick)
         self.quick_menu.grid(row=0, column=0, padx=(0, 8))
 
@@ -141,38 +116,104 @@ class AiTab(ctk.CTkFrame):
 
         self._add_bubble(
             "assistant",
-            "Bonjour ! Je suis l'agent ServerCraft. Sélectionnez un serveur "
-            "ci-dessus : je peux lire ses logs, modifier ses fichiers de "
+            "Bonjour ! Je suis l'agent ServerCraft. Sélectionnez un provider "
+            "et un serveur : je peux lire les logs, modifier les fichiers de "
             "configuration et corriger les erreurs pour vous.")
 
-    # ------------------------------------------------------------- providers
+    # ----------------------------------------------------- panneaux provider
 
-    def _provider_changed(self, value):
-        self.settings["ai_provider"] = "ollama" if value == "Ollama local" else "gemini"
+    def _label(self, parent, text):
+        ctk.CTkLabel(parent, text=text, text_color=theme.MUTED,
+                     font=(theme.FONT, 11)).pack(side="left", padx=(0, 4))
+
+    def _entry(self, parent, key, width, ph="", secret=False):
+        e = ctk.CTkEntry(parent, width=width, placeholder_text=ph,
+                         show="•" if secret else "", **_ENTRY_STYLE)
+        e.insert(0, self.settings.get(key, ""))
+        e.pack(side="left", padx=(0, 8))
+        self._entries[key] = e
+        return e
+
+    def _model_menu(self, parent, provider):
+        current = self.settings.get(f"{provider}_model", "") or "(modèle)"
+        menu = ctk.CTkOptionMenu(parent, width=170, values=[current],
+                               **_MENU_STYLE)
+        menu.set(current)
+        menu.pack(side="left", padx=(0, 4))
+        self._model_menus[provider] = menu
+        return menu
+
+    def _refresh_btn(self, parent, provider):
+        ctk.CTkButton(parent, text="⟳", width=32, fg_color=theme.PANEL_2,
+                      hover_color=theme.HOVER,
+                      command=lambda: self._refresh_models(provider),
+                      ).pack(side="left")
+
+    def _build_key_model(self, key_key, model_key, key_ph):
+        f = ctk.CTkFrame(self.fields_holder, fg_color="transparent")
+        self._label(f, "Clé API")
+        self._entry(f, key_key, 210, key_ph, secret=True)
+        self._label(f, "Modèle")
+        self._entry(f, model_key, 160)
+        return f
+
+    def _build_openai(self):
+        f = ctk.CTkFrame(self.fields_holder, fg_color="transparent")
+        self._label(f, "Clé API")
+        self._entry(f, "openai_api_key", 170, "sk-…", secret=True)
+        self._label(f, "Base")
+        self._entry(f, "openai_base", 175)
+        self._label(f, "Modèle")
+        self._entry(f, "openai_model", 130)
+        return f
+
+    def _build_local(self, provider, url_key):
+        f = ctk.CTkFrame(self.fields_holder, fg_color="transparent")
+        self._label(f, "URL")
+        self._entry(f, url_key, 195)
+        self._model_menu(f, provider)
+        self._refresh_btn(f, provider)
+        return f
+
+    def _build_custom(self):
+        f = ctk.CTkFrame(self.fields_holder, fg_color="transparent")
+        self._label(f, "Base")
+        self._entry(f, "custom_base", 175, "https://…/v1")
+        self._label(f, "Clé")
+        self._entry(f, "custom_key", 110, secret=True)
+        self._label(f, "Modèle")
+        self._entry(f, "custom_model", 130)
+        return f
+
+    def _provider_changed(self, label):
+        key = _LABEL_TO_PROVIDER.get(label, "gemini")
+        self.settings["ai_provider"] = key
         save_settings(self.settings)
-        self.gemini_box.grid_forget()
-        self.ollama_box.grid_forget()
-        box = self.gemini_box if value == "Gemini API" else self.ollama_box
-        box.grid(row=0, column=2, padx=6, pady=10, sticky="w")
+        for f in self.fields.values():
+            f.pack_forget()
+        self.fields[key].pack(side="left")
+        if key in providers.LOCAL_PROVIDERS:
+            self._refresh_models(key)
 
-    def _refresh_ollama_models(self):
-        base = self.ourl_entry.get().strip() or "http://localhost:11434"
-        self.settings["ollama_url"] = base
+    def _refresh_models(self, provider):
+        self._sync_settings()
 
         def work():
-            models = providers.list_ollama_models(base)
-            self.after(0, lambda: self._set_ollama_models(models))
+            models = providers.list_models(provider, self.settings)
+            self.after(0, self._set_models, provider, models)
 
         threading.Thread(target=work, daemon=True).start()
 
-    def _set_ollama_models(self, models):
-        if not models:
-            models = ["llama3.1"]
-            self._add_bubble("step",
-                             "Ollama injoignable — vérifiez que le serveur "
-                             "tourne (ollama serve).")
-        self.omodel_menu.configure(values=models)
-        self.omodel_menu.set(models[0])
+    def _set_models(self, provider, models):
+        menu = self._model_menus[provider]
+        if models:
+            menu.configure(values=models)
+            menu.set(models[0])
+        else:
+            self._add_bubble(
+                "step",
+                f"{providers.PROVIDERS[provider]} : aucun modèle trouvé — "
+                "le serveur local est-il lancé ?")
 
     # ------------------------------------------------------------- serveurs
 
@@ -195,12 +236,12 @@ class AiTab(ctk.CTkFrame):
         return self._agents[name]
 
     def _sync_settings(self):
-        self.settings["ai_provider"] = (
-            "ollama" if self.provider_seg.get() == "Ollama local" else "gemini")
-        self.settings["gemini_api_key"] = self.key_entry.get().strip()
-        self.settings["gemini_model"] = self.gmodel_entry.get().strip()
-        self.settings["ollama_url"] = self.ourl_entry.get().strip()
-        self.settings["ollama_model"] = self.omodel_menu.get().strip()
+        self.settings["ai_provider"] = _LABEL_TO_PROVIDER.get(
+            self.provider_menu.get(), "gemini")
+        for key, entry in self._entries.items():
+            self.settings[key] = entry.get().strip()
+        for provider, menu in self._model_menus.items():
+            self.settings[f"{provider}_model"] = menu.get().strip()
         save_settings(self.settings)
 
     # ------------------------------------------------------------- chat

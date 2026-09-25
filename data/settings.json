@@ -1,0 +1,8 @@
+{
+  "ai_provider": "gemini",
+  "gemini_api_key": "",
+  "gemini_model": "gemini-2.5-flash",
+  "ollama_url": "http://localhost:11434",
+  "ollama_model": "llama3.1",
+  "java_path": ""
+}
