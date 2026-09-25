@@ -29,6 +29,8 @@ build_exe_options = {
     # et le bundle de certificats de certifi (SSL).
     "zip_exclude_packages": ["*"],
     "packages": ["tkinter", "requests", "darkdetect", "customtkinter", "PIL"],
+    # fichiers embarqués à côté de l'exe dans le dossier d'installation
+    "include_files": ["README.md", "CHANGELOG.md"],
     "excludes": [
         "pytest", "unittest", "test", "setuptools", "pip", "wheel",
         "IPython", "matplotlib", "numpy", "pandas", "scipy", "torch",
