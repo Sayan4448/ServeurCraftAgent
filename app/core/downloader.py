@@ -21,15 +21,21 @@ FORGE_PROMOS = "https://files.minecraftforge.net/net/minecraftforge/forge/promot
 FORGE_MAVEN = "https://maven.minecraftforge.net/net/minecraftforge/forge"
 NEOFORGE_META = "https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml"
 NEOFORGE_MAVEN = "https://maven.neoforged.net/releases/net/neoforged/neoforge"
+MOHIST_API = "https://api.mohistmc.com/project/mohist"
 
-LOADERS = ("paper", "purpur", "fabric", "forge", "neoforge")
+LOADERS = ("paper", "purpur", "fabric", "forge", "neoforge", "mohist")
 LOADER_LABELS = {
     "paper": "Paper (plugins)",
     "purpur": "Purpur (plugins)",
     "fabric": "Fabric (mods)",
     "forge": "Forge (mods)",
     "neoforge": "NeoForge (mods)",
+    "mohist": "Mohist (mods + plugins)",
 }
+
+# Où vont les contenus additionnels selon le loader
+PLUGIN_LOADERS = ("paper", "purpur", "mohist")   # ont un dossier plugins/
+MOD_LOADERS = ("fabric", "forge", "neoforge", "mohist")  # dossier mods/
 
 
 class DownloadError(Exception):
@@ -118,6 +124,11 @@ def _sort_mc_versions(versions) -> list:
     return sorted(versions, key=key, reverse=True)
 
 
+def list_mohist_versions() -> list:
+    data = _get_json(f"{MOHIST_API}/versions")
+    return _sort_mc_versions(v["name"] for v in data)
+
+
 def get_versions(loader: str) -> list:
     return {
         "paper": list_paper_versions,
@@ -125,6 +136,7 @@ def get_versions(loader: str) -> list:
         "fabric": list_fabric_versions,
         "forge": list_forge_versions,
         "neoforge": list_neoforge_versions,
+        "mohist": list_mohist_versions,
     }[loader]()
 
 
@@ -180,6 +192,12 @@ def neoforge_download(mc_version: str):
     return url, filename, "installer"
 
 
+def mohist_download(mc_version: str):
+    build = _get_json(f"{MOHIST_API}/{mc_version}/builds/latest")
+    url = f"{MOHIST_API}/{mc_version}/builds/{build['id']}/download"
+    return url, f"mohist-{mc_version}-{build['id']}.jar", "jar"
+
+
 def get_download(loader: str, mc_version: str):
     """Retourne (url, nom_fichier, kind) où kind vaut 'jar' ou 'installer'."""
     return {
@@ -188,6 +206,7 @@ def get_download(loader: str, mc_version: str):
         "fabric": fabric_download,
         "forge": forge_download,
         "neoforge": neoforge_download,
+        "mohist": mohist_download,
     }[loader](mc_version)
 
 

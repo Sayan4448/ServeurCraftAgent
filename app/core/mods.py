@@ -1,14 +1,16 @@
-"""Installation de mods/plugins (Modrinth) et configuration Playit.gg + Voice Chat."""
+"""Mods & plugins : sources Modrinth + CurseForge, install, et Playit.gg."""
 import json
 from pathlib import Path
 
 import requests
 
-from .downloader import download_file
+from .downloader import MOD_LOADERS, PLUGIN_LOADERS, download_file
 from .properties import load_properties, save_properties, update_properties
 
 MODRINTH_API = "https://api.modrinth.com/v2"
-_UA = {"User-Agent": "ServerCraftAgent/1.0 (local server manager)"}
+CURSEFORGE_API = "https://api.curseforge.com/v1"
+FORGECDN = "https://edge.forgecdn.net/files"
+_UA = {"User-Agent": "ServerCraftAgent/0.2 (local server manager)"}
 
 VOICE_PROJECTS = {
     "simple_voice_chat": "simple-voice-chat",
@@ -19,20 +21,109 @@ VOICE_LABELS = {
     "plasmo_voice": "Plasmo Voice",
 }
 
-# Loaders Modrinth à interroger selon le type de serveur (repli inclus).
+# Catégories Modrinth selon le loader (ordre = préférence).
 LOADER_MAP = {
     "paper": ["paper", "bukkit"],
     "purpur": ["purpur", "paper", "bukkit"],
     "fabric": ["fabric"],
     "forge": ["forge"],
     "neoforge": ["neoforge"],
+    "mohist": ["forge", "bukkit"],
 }
+
+# CurseForge : classId 6 = mods, 5 = plugins Bukkit. ModLoaderType enum.
+CF_MODLOADER = {
+    "forge": 1, "fabric": 4, "neoforge": 6,
+}
+CF_CLASS_MOD = 6
+CF_CLASS_PLUGIN = 5
 
 DEFAULT_VOICE_PORT = 24454
 
 
 class ModError(Exception):
     pass
+
+
+# ------------------------------------------------------------- helpers dossiers
+
+def supports_plugins(loader: str) -> bool:
+    return loader in PLUGIN_LOADERS
+
+
+def supports_mods(loader: str) -> bool:
+    return loader in MOD_LOADERS
+
+
+def target_dir(server_dir: Path, loader: str, kind: str) -> Path:
+    """kind = 'mod' | 'plugin' -> dossier de destination selon le loader."""
+    if kind == "plugin":
+        if not supports_plugins(loader):
+            raise ModError(f"{loader} ne supporte pas les plugins Bukkit.")
+        return server_dir / "plugins"
+    if not supports_mods(loader):
+        raise ModError(f"{loader} ne supporte pas les mods.")
+    return server_dir / "mods"
+
+
+def default_kind(loader: str) -> str:
+    """Type de contenu privilégié pour ce loader."""
+    if loader in ("paper", "purpur"):
+        return "plugin"
+    return "mod"
+
+
+def list_installed(server_dir: Path, loader: str) -> list:
+    """Fichiers .jar présents dans mods/ et plugins/ (selon le loader)."""
+    out = []
+    dirs = []
+    if supports_mods(loader):
+        dirs.append(("mod", server_dir / "mods"))
+    if supports_plugins(loader):
+        dirs.append(("plugin", server_dir / "plugins"))
+    for kind, d in dirs:
+        if d.exists():
+            for f in sorted(d.glob("*.jar")):
+                out.append({"kind": kind, "name": f.name, "path": str(f)})
+    return out
+
+
+def remove_installed(path: str) -> None:
+    Path(path).unlink(missing_ok=True)
+
+
+# ------------------------------------------------------------------- Modrinth
+
+def search_modrinth(query: str, loader: str, mc_version: str,
+                    kind: str = "mod", limit: int = 20) -> list:
+    """Recherche Modrinth. kind = 'mod' | 'plugin'."""
+    facets = [["project_type:" + ("plugin" if kind == "plugin" else "mod")]]
+    if mc_version:
+        facets.append(["versions:" + mc_version])
+    loaders = LOADER_MAP.get(loader, [loader])
+    # mohist : mods = forge ; plugins = bukkit/paper
+    if loader == "mohist":
+        loaders = ["forge"] if kind == "mod" else ["bukkit", "paper", "spigot"]
+    # Modrinth : éléments d'une même sous-liste = OU logique
+    facets.append([f"categories:{l}" for l in loaders])
+    r = requests.get(
+        f"{MODRINTH_API}/search",
+        params={
+            "query": query, "facets": json.dumps(facets),
+            "limit": limit, "index": "downloads",
+        },
+        headers=_UA, timeout=20,
+    )
+    r.raise_for_status()
+    return [
+        {
+            "id": h["project_id"], "slug": h["slug"], "title": h["title"],
+            "description": h["description"], "downloads": h["downloads"],
+            "author": h["author"], "source": "modrinth",
+            "kind": kind, "icon": h.get("icon_url", ""),
+        }
+        for h in r.json().get("hits", [])
+    ]
 
 
 def _modrinth_versions(project: str, loaders: list, mc_version: str) -> list:
@@ -47,7 +138,6 @@ def _modrinth_versions(project: str, loaders: list, mc_version: str) -> list:
     r.raise_for_status()
     versions = r.json()
     if not versions and loaders:
-        # Repli : certaines releases n'étiquettent pas tous les loaders.
         params.pop("loaders")
         r = requests.get(
             f"{MODRINTH_API}/project/{project}/version",
@@ -58,6 +148,98 @@ def _modrinth_versions(project: str, loaders: list, mc_version: str) -> list:
     return versions
 
 
+def install_modrinth(project_slug: str, server_dir: Path, loader: str,
+                     mc_version: str, kind: str, progress_cb=None) -> Path:
+    loaders = LOADER_MAP.get(loader, [loader])
+    if loader == "mohist":
+        loaders = ["forge"] if kind == "mod" else ["bukkit", "paper", "spigot"]
+    versions = _modrinth_versions(project_slug, loaders, mc_version)
+    if not versions:
+        raise ModError(f"{project_slug} : aucune version pour {mc_version}")
+    files = versions[0].get("files", [])
+    jar = next((f for f in files if f.get("primary")), None) or next(
+        (f for f in files if f["filename"].endswith(".jar")), None)
+    if not jar:
+        raise ModError(f"{project_slug} : aucun fichier .jar téléchargeable")
+    dest = target_dir(server_dir, loader, kind) / jar["filename"]
+    return download_file(jar["url"], dest, progress_cb)
+
+
+# ----------------------------------------------------------------- CurseForge
+
+def _cf_headers(api_key: str) -> dict:
+    return {**_UA, "x-api-key": api_key, "Accept": "application/json"}
+
+
+def search_curseforge(query: str, loader: str, mc_version: str,
+                      kind: str, api_key: str, limit: int = 20) -> list:
+    """Recherche CurseForge. Nécessite une clé API (console.curseforge.com)."""
+    if not api_key:
+        raise ModError("CurseForge nécessite une clé API "
+                       "(console.curseforge.com — gratuite).")
+    class_id = CF_CLASS_PLUGIN if kind == "plugin" else CF_CLASS_MOD
+    params = {
+        "gameId": 432, "classId": class_id, "searchFilter": query,
+        "pageSize": limit, "sortField": 2, "sortOrder": "desc",
+    }
+    if mc_version:
+        params["gameVersion"] = mc_version
+    if kind == "mod" and loader in CF_MODLOADER:
+        params["modLoaderType"] = CF_MODLOADER[loader]
+    r = requests.get(f"{CURSEFORGE_API}/mods/search", params=params,
+                     headers=_cf_headers(api_key), timeout=20)
+    if r.status_code == 403:
+        raise ModError("Clé API CurseForge invalide.")
+    r.raise_for_status()
+    out = []
+    for m in r.json().get("data", []):
+        out.append({
+            "id": m["id"], "slug": m.get("slug", str(m["id"])),
+            "title": m["name"], "description": (m.get("summary") or "")[:200],
+            "downloads": m.get("downloadCount", 0),
+            "author": ", ".join(a["name"] for a in m.get("authors", [])),
+            "source": "curseforge", "kind": kind,
+            "icon": (m.get("logo") or {}).get("thumbnailUrl", ""),
+        })
+    return out
+
+
+def install_curseforge(mod_id: int, server_dir: Path, loader: str,
+                       mc_version: str, kind: str, api_key: str,
+                       progress_cb=None) -> Path:
+    params = {"pageSize": 50}
+    if mc_version:
+        params["gameVersion"] = mc_version
+    if kind == "mod" and loader in CF_MODLOADER:
+        params["modLoaderType"] = CF_MODLOADER[loader]
+    r = requests.get(f"{CURSEFORGE_API}/mods/{mod_id}/files", params=params,
+                     headers=_cf_headers(api_key), timeout=20)
+    r.raise_for_status()
+    files = r.json().get("data", [])
+    if not files:
+        raise ModError(f"CurseForge mod {mod_id} : aucun fichier compatible.")
+    f = files[0]
+    url = f.get("downloadUrl")
+    if not url:
+        # Distribution restreinte : URL forgecdn reconstruite
+        fid = str(f["id"])
+        url = f"{FORGECDN}/{fid[:4]}/{fid[4:]}/{f['fileName']}"
+    dest = target_dir(server_dir, loader, kind) / f["fileName"]
+    return download_file(url, dest, progress_cb)
+
+
+def install_result(result: dict, server_dir: Path, loader: str,
+                   mc_version: str, api_key: str = "", progress_cb=None) -> Path:
+    if result["source"] == "curseforge":
+        return install_curseforge(result["id"], server_dir, loader,
+                                  mc_version, result["kind"], api_key,
+                                  progress_cb)
+    return install_modrinth(result["slug"], server_dir, loader,
+                            mc_version, result["kind"], progress_cb)
+
+
+# ---------------------------------------------------------------- Voice Chat
+
 def install_voice_mod(
     server_dir: Path,
     loader: str,
@@ -67,6 +249,7 @@ def install_voice_mod(
 ) -> Path:
     """Télécharge le plugin/mod Voice Chat dans plugins/ ou mods/."""
     project = VOICE_PROJECTS[which]
+    kind = "plugin" if loader in ("paper", "purpur") else "mod"
     versions = _modrinth_versions(project, LOADER_MAP[loader], mc_version)
     if not versions:
         raise ModError(
@@ -74,19 +257,17 @@ def install_voice_mod(
         )
     files = versions[0].get("files", [])
     jar = next((f for f in files if f.get("primary")), None) or next(
-        (f for f in files if f["filename"].endswith(".jar")), None
-    )
+        (f for f in files if f["filename"].endswith(".jar")), None)
     if not jar:
         raise ModError(f"{VOICE_LABELS[which]} : aucun fichier .jar téléchargeable")
 
-    sub = "plugins" if loader in ("paper", "purpur") else "mods"
-    dest = server_dir / sub / jar["filename"]
+    dest = target_dir(server_dir, loader, kind) / jar["filename"]
     download_file(jar["url"], dest, progress_cb)
     return dest
 
 
 def voicechat_config_path(server_dir: Path, loader: str) -> Path:
-    if loader in ("paper", "purpur"):
+    if supports_plugins(loader) and loader != "mohist":
         return server_dir / "plugins" / "voicechat" / "voicechat-server.properties"
     return server_dir / "config" / "voicechat" / "voicechat-server.properties"
 

@@ -1,16 +1,20 @@
-"""Onglet 'Mes Serveurs' : liste, démarrage/arrêt, console en direct."""
+"""Onglet 'Mes Serveurs' : liste, démarrage/arrêt, console en direct, joueurs."""
 import os
 import queue
 import subprocess
 import sys
+import tkinter as tk
+import time
 from collections import deque
 from tkinter import messagebox
 
 import customtkinter as ctk
 
+from ..core import players as pl
 from ..core import server_manager as sm
 from ..core.downloader import LOADER_LABELS
 from . import theme
+from .mods_manager import ModsManager
 
 
 class ServersTab(ctk.CTkFrame):
@@ -20,6 +24,8 @@ class ServersTab(ctk.CTkFrame):
         self.buffers = {}          # name -> deque de lignes console
         self.events = queue.Queue()
         self._cards = {}
+        self.trackers = {}         # name -> PlayerTracker
+        self.player_sets = {}      # name -> set de pseudos
 
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
@@ -61,6 +67,8 @@ class ServersTab(ctk.CTkFrame):
             hover_color="#b91c1c", height=30, width=90,
             command=self.delete_selected)
         self.btn_delete.pack(side="right", padx=(6, 0))
+        ctk.CTkButton(toolbar, text="🧩 Mods/Plugins", command=self.open_mods,
+                      **btn).pack(side="right", padx=6)
         ctk.CTkButton(toolbar, text="Dossier", command=self.open_folder,
                       **btn).pack(side="right", padx=6)
         ctk.CTkButton(toolbar, text="Redémarrer", command=self.restart_selected,
@@ -95,8 +103,26 @@ class ServersTab(ctk.CTkFrame):
                       hover_color=theme.ACCENT_HOVER,
                       command=self.send_command).grid(row=0, column=1)
 
+        # --------------------------------------------------------- joueurs
+        players_panel = ctk.CTkFrame(self, fg_color=theme.PANEL,
+                                     corner_radius=10, width=210)
+        players_panel.grid(row=0, column=2, sticky="ns", padx=(8, 0))
+        players_panel.grid_propagate(False)
+        players_panel.grid_rowconfigure(1, weight=1)
+
+        self.players_header = ctk.CTkLabel(
+            players_panel, text="Joueurs en ligne (0)",
+            font=(theme.FONT, 13, "bold"), text_color=theme.TEXT)
+        self.players_header.grid(row=0, column=0, sticky="w", padx=12, pady=10)
+
+        self.players_frame = ctk.CTkScrollableFrame(players_panel,
+                                                  fg_color="transparent")
+        self.players_frame.grid(row=1, column=0, sticky="nsew", padx=6,
+                                pady=(0, 8))
+
         self.refresh()
         self.after(250, self._poll)
+        self.after(8000, self._list_poll)
 
     # ------------------------------------------------------------- liste/cartes
 
@@ -152,11 +178,132 @@ class ServersTab(ctk.CTkFrame):
 
     def _select(self, name: str):
         self.selected = name
+        self._ensure_tracker(name)
         for n, (card, _dot) in self._cards.items():
             card.configure(
                 border_color=theme.ACCENT if n == name else theme.BORDER)
         self.sel_label.configure(text=name)
         self._redraw_console()
+        self._render_players()
+
+    # --------------------------------------------------------------- joueurs
+
+    def _ensure_tracker(self, name: str):
+        """Branche un PlayerTracker sur le flux console du serveur."""
+        if name in self.trackers:
+            return
+        tracker = pl.PlayerTracker(name)
+        tracker.on_change = (
+            lambda ps, n=name: self.after(0, self._players_changed, n, ps))
+        proc = sm.get_process(name)
+        proc.add_listener(
+            on_line=tracker.feed,
+            on_exit=lambda n, c: self.after(0, self._server_stopped, n))
+        self.trackers[name] = tracker
+        self.player_sets.setdefault(name, set())
+
+    def _players_changed(self, name, players_set):
+        self.player_sets[name] = players_set
+        if name == self.selected:
+            self._render_players()
+
+    def _server_stopped(self, name):
+        tracker = self.trackers.get(name)
+        if tracker:
+            tracker.players.clear()
+        self.player_sets[name] = set()
+        if name == self.selected:
+            self._render_players()
+
+    def _render_players(self):
+        for w in self.players_frame.winfo_children():
+            w.destroy()
+        players = sorted(self.player_sets.get(self.selected, set()),
+                         key=str.lower)
+        self.players_header.configure(
+            text=f"Joueurs en ligne ({len(players)})")
+        if not players:
+            ctk.CTkLabel(self.players_frame,
+                         text="Aucun joueur connecté.",
+                         text_color=theme.MUTED,
+                         font=(theme.FONT, 11)).pack(pady=12)
+            return
+        for p in players:
+            row = ctk.CTkFrame(self.players_frame, fg_color=theme.PANEL_2,
+                               corner_radius=6)
+            row.pack(fill="x", pady=2)
+            ctk.CTkLabel(row, text=p, font=(theme.FONT, 12, "bold"),
+                         text_color=theme.TEXT, anchor="w").pack(
+                side="left", padx=8, pady=5)
+            btn = ctk.CTkButton(row, text="⋯", width=26, height=24,
+                                fg_color=theme.PANEL, hover_color=theme.HOVER)
+            btn.configure(command=lambda b=btn, n=p:
+                          self._player_menu(n, b))
+            btn.pack(side="right", padx=4)
+
+    def _player_menu(self, name: str, widget):
+        menu = tk.Menu(self, tearoff=0, bg=theme.PANEL_2, fg=theme.TEXT,
+                       activebackground=theme.ACCENT,
+                       activeforeground="#ffffff")
+        proc = sm.get_process(self.selected)
+
+        def act(fn, *args, ok=None):
+            fn(proc, *args)
+            if ok:
+                self._append(ok, "warn")
+
+        menu.add_command(
+            label="💬 Message privé…",
+            command=lambda: self._player_message(proc, name))
+        menu.add_separator()
+        menu.add_command(
+            label="👢 Kick",
+            command=lambda: act(pl.kick, name, "Expulsé par l'admin",
+                                ok=f"kick {name}"))
+        menu.add_command(
+            label="🔨 Bannir",
+            command=lambda: act(pl.ban, name, "Banni par l'admin",
+                                ok=f"ban {name}"))
+        menu.add_command(
+            label="🕊 Pardon (unban)",
+            command=lambda: act(pl.pardon, name, ok=f"pardon {name}"))
+        menu.add_separator()
+        menu.add_command(label="⭐ Op",
+                         command=lambda: act(pl.op, name, ok=f"op {name}"))
+        menu.add_command(label="➖ Deop",
+                         command=lambda: act(pl.deop, name,
+                                             ok=f"deop {name}"))
+        menu.add_separator()
+        for mode in ("survival", "creative", "adventure", "spectator"):
+            menu.add_command(
+                label=f"Gamemode {mode}",
+                command=lambda m=mode: act(pl.gamemode, name, m,
+                                           ok=f"gamemode {m} {name}"))
+        menu.add_separator()
+        menu.add_command(label="💀 Tuer",
+                         command=lambda: act(pl.kill, name,
+                                             ok=f"kill {name}"))
+        try:
+            menu.tk_popup(widget.winfo_rootx(),
+                          widget.winfo_rooty() + widget.winfo_height())
+        finally:
+            menu.grab_release()
+
+    def _player_message(self, proc, name: str):
+        dlg = ctk.CTkInputDialog(text=f"Message privé à {name} :",
+                                 title="Message")
+        text = dlg.get_input()
+        if text:
+            pl.message(proc, name, text)
+            self._append(f"→ {name} : {text}")
+
+    def _list_poll(self):
+        """Envoie périodiquement 'list' pour rafraîchir les joueurs."""
+        if self.selected:
+            proc = sm.PROCESSES.get(self.selected)
+            if proc and proc.is_running():
+                proc.send("list")
+        self.after(8000, self._list_poll)
 
     # --------------------------------------------------------------- console
 
@@ -205,6 +352,7 @@ class ServersTab(ctk.CTkFrame):
             return
         name = self.selected
         proc = sm.get_process(name)
+        self._ensure_tracker(name)
         try:
             proc.start(on_line=lambda n, l: self._enqueue("line", n, l),
                        on_exit=lambda n, c: self._enqueue("exit", n, c))
@@ -231,6 +379,13 @@ class ServersTab(ctk.CTkFrame):
         else:
             self._append("Serveur non lancé.", "err")
         self.cmd_entry.delete(0, "end")
+
+    def open_mods(self):
+        if not self.selected:
+            return
+        meta = sm.load_meta(sm.server_dir(self.selected))
+        meta["dir"] = str(sm.server_dir(self.selected))
+        ModsManager(self.winfo_toplevel(), meta)
 
     def open_folder(self):
         if not self.selected:

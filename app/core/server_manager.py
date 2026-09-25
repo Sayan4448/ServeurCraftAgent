@@ -157,7 +157,13 @@ def create_server(options: dict, progress_cb=None, log=print) -> dict:
             )
             log("PLAYIT-README.txt généré.")
 
-        # 7) métadonnées
+        # 7) dossiers de contenu selon le loader (mods/, plugins/)
+        for sub in ("mods", "plugins"):
+            if (sub == "mods" and mods_mod.supports_mods(loader)) or \
+               (sub == "plugins" and mods_mod.supports_plugins(loader)):
+                (path / sub).mkdir(exist_ok=True)
+
+        # 8) métadonnées
         meta = {
             "name": name,
             "loader": loader,
@@ -250,6 +256,14 @@ class ServerProcess:
         self.proc = None
         self.on_line = None
         self.on_exit = None
+        self.listeners = []          # callbacks (name, line) -> joueurs/autonomie
+        self.exit_listeners = []     # callbacks (name, code)
+
+    def add_listener(self, on_line=None, on_exit=None) -> None:
+        if on_line:
+            self.listeners.append(on_line)
+        if on_exit:
+            self.exit_listeners.append(on_exit)
 
     def is_running(self) -> bool:
         return self.proc is not None and self.proc.poll() is None
@@ -270,13 +284,24 @@ class ServerProcess:
 
     def _reader(self) -> None:
         for line in self.proc.stdout:
+            line = line.rstrip("\n")
             if self.on_line:
-                self.on_line(self.name, line.rstrip("\n"))
+                self.on_line(self.name, line)
+            for cb in list(self.listeners):
+                try:
+                    cb(self.name, line)
+                except Exception:
+                    pass
 
     def _waiter(self) -> None:
         code = self.proc.wait()
         if self.on_exit:
             self.on_exit(self.name, code)
+        for cb in list(self.exit_listeners):
+            try:
+                cb(self.name, code)
+            except Exception:
+                pass
 
     def send(self, command: str) -> bool:
         if not self.is_running():

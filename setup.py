@@ -8,16 +8,34 @@ Produit dist/ServerCraftAgent-<version>-win64.msi
 """
 from cx_Freeze import Executable, setup
 
-APP_VERSION = "0.1.0"
+APP_VERSION = "0.2.0"
 APP_NAME = "ServerCraftAgent"
+
+# Raccourcis créés par l'installateur : Bureau + menu Démarrer.
+# Table MSI Shortcut : 12 colonnes (Shortcut, Directory_, Name, Component_,
+# Target, Arguments, Description, Hotkey, Icon_, IconIndex, ShowCmd, WkDir).
+shortcut_table = [
+    ("DesktopShortcut", "DesktopFolder", "ServerCraft Agent",
+     "TARGETDIR", f"[TARGETDIR]{APP_NAME}.exe",
+     None, None, None, None, None, None, "TARGETDIR"),
+    ("StartMenuShortcut", "ProgramMenuFolder", "ServerCraft Agent",
+     "TARGETDIR", f"[TARGETDIR]{APP_NAME}.exe",
+     None, None, None, None, None, None, "TARGETDIR"),
+]
 
 build_exe_options = {
     # zip_exclude "*": les packages restent en vrais fichiers dans lib/ —
     # indispensable pour les assets de customtkinter (thèmes .json, polices)
     # et le bundle de certificats de certifi (SSL).
     "zip_exclude_packages": ["*"],
-    "packages": ["tkinter", "requests", "darkdetect", "customtkinter"],
-    "excludes": ["pytest", "unittest", "test", "setuptools", "pip"],
+    "packages": ["tkinter", "requests", "darkdetect", "customtkinter", "PIL"],
+    "excludes": [
+        "pytest", "unittest", "test", "setuptools", "pip", "wheel",
+        "IPython", "matplotlib", "numpy", "pandas", "scipy", "torch",
+        "cv2", "jupyter_client", "jupyter_core", "notebook", "pygments",
+        "prompt_toolkit", "traitlets", "PyQt5", "PyQt6", "PySide2",
+        "PySide6", "sphinx", "docutils",
+    ],
     "include_msvcr": True,
 }
 
@@ -27,6 +45,7 @@ bdist_msi_options = {
     "add_to_path": False,
     "all_users": True,
     "initial_target_dir": rf"[ProgramFilesFolder]\{APP_NAME}",
+    "data": {"Shortcut": shortcut_table},
 }
 
 setup(

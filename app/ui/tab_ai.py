@@ -5,6 +5,7 @@ import customtkinter as ctk
 
 from ..ai.agent import Agent
 from ..ai import providers
+from ..ai.autonomy import AutonomousModerator, get_moderator, set_moderator
 from ..config import load_settings, save_settings
 from ..core import server_manager as sm
 from . import theme
@@ -74,12 +75,29 @@ class AiTab(ctk.CTkFrame):
                      font=(theme.FONT, 12)).grid(row=0, column=3, padx=(16, 6))
         self.server_menu = ctk.CTkOptionMenu(
             cfg, width=150, values=self._server_names(),
-            **_MENU_STYLE, command=lambda _v: None)
+            **_MENU_STYLE, command=lambda _v: self._server_changed())
         self.server_menu.grid(row=0, column=4, padx=(0, 6), pady=10)
         ctk.CTkButton(cfg, text="⟳", width=32, fg_color=theme.PANEL_2,
                       hover_color=theme.HOVER,
                       command=self._refresh_servers).grid(
             row=0, column=5, padx=(0, 12))
+
+        # -------------------------------------------------- mode autonome
+        auto = ctk.CTkFrame(cfg, fg_color="transparent")
+        auto.grid(row=1, column=0, columnspan=6, sticky="ew",
+                  padx=14, pady=(0, 10))
+        self.auto_switch = ctk.CTkSwitch(
+            auto, text="🤖 Modération autonome du chat (l'IA surveille et "
+            "warn/kick/ban selon les règles)",
+            text_color=theme.TEXT, progress_color=theme.ACCENT,
+            command=self._toggle_autonomy)
+        self.auto_switch.pack(side="left")
+        self.rules_entry = ctk.CTkEntry(
+            auto, width=400,
+            placeholder_text="Règles : ex « warn les insultes, kick au 3e warn »",
+            **_ENTRY_STYLE)
+        self.rules_entry.insert(0, self.settings.get("auto_mod_rules", ""))
+        self.rules_entry.pack(side="left", padx=12)
 
         # ------------------------------------------------------------- chat
         self.chat_frame = ctk.CTkScrollableFrame(self, fg_color=theme.PANEL,
@@ -225,6 +243,42 @@ class AiTab(ctk.CTkFrame):
         names = self._server_names()
         self.server_menu.configure(values=names)
         self.server_menu.set(names[0])
+        self._server_changed()
+
+    def _server_changed(self):
+        mod = get_moderator(self.server_menu.get())
+        if mod and mod.enabled:
+            self.auto_switch.select()
+        else:
+            self.auto_switch.deselect()
+
+    def _toggle_autonomy(self):
+        name = self.server_menu.get()
+        if name == "(aucun serveur)":
+            self.auto_switch.deselect()
+            self._add_bubble(
+                "assistant", "Sélectionnez d'abord un serveur (liste ci-dessus).")
+            return
+        if self.auto_switch.get():
+            self._sync_settings()
+            rules = self.rules_entry.get().strip() or \
+                "Aucune insulte, aucun spam, respect entre joueurs."
+            self.settings["auto_mod_rules"] = rules
+            self.settings["auto_mod_enabled"] = True
+            save_settings(self.settings)
+            mod = AutonomousModerator(
+                name, self.settings, rules,
+                on_event=lambda t: self.after(
+                    0, self._add_bubble, "step", f"🤖 {t}"))
+            set_moderator(name, mod)
+            self._add_bubble(
+                "step",
+                f"Modération autonome activée sur « {name} » — règles : {rules}")
+        else:
+            set_moderator(name, None)
+            self.settings["auto_mod_enabled"] = False
+            save_settings(self.settings)
+            self._add_bubble("step", "Modération autonome désactivée.")
 
     def _get_agent(self):
         name = self.server_menu.get()

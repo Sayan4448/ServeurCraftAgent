@@ -24,6 +24,9 @@ DEFAULT_SETTINGS = {
     "custom_base": "",
     "custom_key": "",
     "custom_model": "",
+    "curseforge_api_key": "",           # console.curseforge.com (gratuit)
+    "auto_mod_enabled": False,          # modération autonome du chat par l'IA
+    "auto_mod_rules": "Aucune insulte, aucun spam, respect entre joueurs.",
     "java_path": "",                    # vide = détection/auto-téléchargement
 }
 

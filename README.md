@@ -1,9 +1,11 @@
-# ServerCraft Agent — Beta 0.1
+# ServerCraft Agent
 
 Application de bureau locale pour **créer, lancer et administrer des serveurs
 Minecraft en 1 clic** — sans compte Minecraft requis (mode offline), avec
-intégration **Voice Chat**, **Playit.gg** et un **agent IA multi-providers**
-(Gemini, Anthropic, OpenAI, Ollama, LM Studio…).
+**gestionnaire de mods/plugins** (Modrinth + CurseForge), intégration
+**Voice Chat** / **Playit.gg**, gestion des **joueurs** et un **agent IA
+multi-providers** (Gemini, Anthropic, OpenAI, Ollama, LM Studio…) avec
+**mode de modération autonome**.
 
 ## Installation
 
@@ -28,7 +30,8 @@ Temurin 21 est téléchargé dans `runtimes/` (via l'API Adoptium).
 ## Fonctionnalités
 
 ### Onglet « Créateur Rapide »
-- Choix du type : **Paper / Purpur** (plugins), **Fabric / Forge / NeoForge** (mods).
+- Choix du type : **Paper / Purpur** (plugins), **Fabric / Forge / NeoForge**
+  (mods), **Mohist** (mods Forge + plugins Bukkit ensemble).
 - Versions récupérées en direct depuis les API officielles
   (papermc.io, purpurmc.org, Fabric Meta, Forge promotions, Maven NeoForge).
 - Téléchargement du `server.jar`, exécution automatique des installeurs
@@ -43,6 +46,18 @@ Temurin 21 est téléchargé dans `runtimes/` (via l'API Adoptium).
 ### Onglet « Mes Serveurs »
 - Lancer / Arrêter (`stop` propre) / Redémarrer / Supprimer / Ouvrir le dossier.
 - **Console en direct** avec coloration des erreurs et envoi de commandes.
+- **Panneau joueurs** : liste en temps réel (détection join/leave + `list`
+  périodique) ; clic sur ⋯ → message privé, **kick, ban, unban, op/deop,
+  gamemode, kill** — tout passe par la console du serveur.
+- Bouton **Mods/Plugins** : gestionnaire intégré.
+
+### Gestionnaire de Mods & Plugins
+- Recherche sur **Modrinth** (sans clé) et **CurseForge** (clé API gratuite —
+  console.curseforge.com, champ intégré dans la fenêtre).
+- Installation **automatique** dans `mods/` ou `plugins/` selon le loader et le
+  type — aucun chemin à saisir. Filtrage par loader + version MC.
+- Liste des fichiers installés avec suppression en 1 clic.
+- Sur **Mohist**, les deux types cohabitent (mods Forge + plugins Bukkit).
 
 ### Onglet « Agent IA & Outils »
 - Providers supportés (sélecteur en haut de l'onglet) :
@@ -61,6 +76,10 @@ Temurin 21 est téléchargé dans `runtimes/` (via l'API Adoptium).
   diagnostique et applique le correctif directement dans la config.
 - Prompts rapides (ex : *« Configure ce serveur pour du RP avec Voice Chat et
   4 Go de RAM »*).
+- **Mode autonome** : switch « Modération autonome du chat » — l'IA lit chaque
+  message du chat, applique tes règles (warn → kick → ban progressifs, compteur
+  d'avertissements par joueur) via la console. Journal des actions affiché
+  dans le chat.
 
 ## Playit.gg — mode d'emploi
 
