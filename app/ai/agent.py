@@ -5,6 +5,7 @@ dans le dossier du serveur puis renvoie les résultats, jusqu'à réponse finale
 """
 import json
 import re
+import time
 from pathlib import Path
 
 from ..core import server_manager as sm
@@ -54,6 +55,9 @@ Règles :
 - Pour installer un mod ou un plugin demandé par l'utilisateur, utilise install_mod directement
   (Modrinth, sans clé) — précise kind="plugin" sur les loaders Bukkit/Paper/Mohist quand pertinent.
   Vérifie avec list_mods() ce qui est déjà installé avant d'installer.
+- Si le serveur est lancé, tu peux aussi agir DANS LE JEU via send_command : construire une
+  structure (fill, setblock, clone), invoquer des entités (summon), donner des items (give),
+  téléporter (tp), etc. Décris ensuite ce que tu as construit/fait.
 """
 
 
@@ -67,6 +71,9 @@ class Agent:
     # ------------------------------------------------------------ conversation
 
     def run(self, user_msg: str, on_step=None) -> str:
+        self.stats = {"files": set(), "mods": [], "removed": [],
+                      "commands": [], "searches": [], "errors": 0}
+        self._start_ts = time.time()
         self.history.append({"role": "user", "content": user_msg})
         for _ in range(MAX_TOOL_LOOPS):
             reply = providers.chat(
@@ -79,14 +86,57 @@ class Agent:
                 return reply
             results = []
             for act in actions:
+                res, ev = self._execute(act)
+                self._track(ev, act, res)
                 if on_step:
-                    on_step(f"⚙ {act.get('tool')} {json.dumps(act, ensure_ascii=False)[:120]}")
-                results.append(self._execute(act))
+                    on_step(ev)
+                results.append(res)
             self.history.append({
                 "role": "user",
                 "content": "Résultats des actions :\n" + "\n".join(results),
             })
         return "Limite d'actions atteinte. Reformule ou continue la conversation."
+
+    def summary(self) -> str:
+        """Résumé lisible des actions effectuées pendant le dernier run."""
+        if not hasattr(self, "stats"):
+            return ""
+        s = self.stats
+        parts = []
+        if s["files"]:
+            parts.append(f"{len(s['files'])} fichier(s) modifié(s) : "
+                         + ", ".join(sorted(s["files"])[:5]))
+        if s["mods"]:
+            parts.append(f"{len(s['mods'])} mod/plugin installé(s) : "
+                         + ", ".join(s["mods"][:5]))
+        if s["removed"]:
+            parts.append(f"{len(s['removed'])} supprimé(s) : "
+                         + ", ".join(s["removed"][:5]))
+        if s["commands"]:
+            parts.append(f"{len(s['commands'])} commande(s) en jeu")
+        if s["searches"]:
+            parts.append(f"{len(s['searches'])} recherche(s) Modrinth")
+        if s["errors"]:
+            parts.append(f"{s['errors']} erreur(s)")
+        if not parts:
+            return ""
+        elapsed = time.time() - self._start_ts
+        return "📋 Résumé : " + " · ".join(parts) + f" — {elapsed:.0f} s"
+
+    def _track(self, ev: dict, act: dict, res: str) -> None:
+        k = ev["kind"]
+        if k == "error":
+            self.stats["errors"] += 1
+        elif k == "file":
+            self.stats["files"].add(act.get("path", ""))
+        elif k == "mod":
+            self.stats["mods"].append(res.split(" install")[0])
+        elif k == "del":
+            self.stats["removed"].append(act.get("filename", ""))
+        elif k == "cmd":
+            self.stats["commands"].append(act.get("cmd", ""))
+        elif k == "search":
+            self.stats["searches"].append(act.get("query", ""))
 
     def analyze_logs(self, on_step=None) -> str:
         errors = self._tool_read_errors(500)
@@ -123,17 +173,58 @@ class Agent:
             raise PermissionError(f"Chemin hors du serveur : {rel}")
         return p
 
-    def _execute(self, act: dict) -> str:
+    def _execute(self, act: dict):
+        """Exécute un outil -> (résultat pour le modèle, événement pour l'UI)."""
         tool = act.get("tool")
         try:
             handler = getattr(self, f"_tool_{tool}", None)
             if not handler:
-                return f"[{tool}] Outil inconnu."
-            return handler(**{k: v for k, v in act.items() if k != "tool"})
+                res = f"[{tool}] Outil inconnu."
+            else:
+                res = handler(**{k: v for k, v in act.items() if k != "tool"})
         except TypeError as e:
-            return f"[{tool}] Arguments invalides : {e}"
+            res = f"[{tool}] Arguments invalides : {e}"
         except Exception as e:
-            return f"[{tool}] Erreur : {e}"
+            res = f"[{tool}] Erreur : {e}"
+        return res, self._event(tool, act, res)
+
+    @staticmethod
+    def _event(tool: str, act: dict, res: str) -> dict:
+        """Traduit une exécution d'outil en événement lisible pour l'UI."""
+        low = res.lower()
+        error = any(m in low for m in (
+            "erreur", "inconnu", "invalide", "inexistant", "introuvable",
+            "échec", "non autorisée", "non lancé"))
+        icon, text, kind = "⚙", tool, "info"
+        if tool == "list_files":
+            icon, text = "📁", f"Liste des fichiers ({act.get('subdir') or 'racine'})"
+        elif tool == "read_file":
+            icon, text = "📖", f"Lecture de {act.get('path')}"
+        elif tool == "read_errors":
+            icon, text = "🔍", "Analyse des erreurs de latest.log"
+        elif tool == "server_info":
+            icon, text = "ℹ️", "Lecture des informations serveur"
+        elif tool == "write_file":
+            icon, text, kind = "📝", f"Fichier réécrit : {act.get('path')}", "file"
+        elif tool == "edit_properties":
+            keys = ", ".join(act.get("changes", {}).keys())
+            icon, text, kind = "🔧", f"Config modifiée : {act.get('path')} ({keys})", "file"
+        elif tool == "send_command":
+            icon, text, kind = "⚡", f"Commande en jeu : {act.get('cmd')}", "cmd"
+        elif tool == "search_mods":
+            icon, text, kind = "🔍", f"Recherche Modrinth : « {act.get('query')} »", "search"
+        elif tool == "install_mod":
+            icon, text, kind = "🧩", f"Installation de « {act.get('name')} »", "mod"
+            if not error:
+                text += f" → {res.split(' install')[0]}"
+        elif tool == "list_mods":
+            icon, text = "🧩", "Liste des mods/plugins installés"
+        elif tool == "remove_mod":
+            icon, text, kind = "🗑️", f"Suppression de {act.get('filename')}", "del"
+        if error:
+            icon, kind = "❌", "error"
+            text += f" — {res[:100]}"
+        return {"icon": icon, "text": text, "kind": kind}
 
     # ----------------------------------------------------------------- outils
 

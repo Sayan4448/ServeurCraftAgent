@@ -1,5 +1,6 @@
 """Onglet 'Agent IA & Outils' : chat, analyse de logs, prompts rapides."""
 import threading
+import time
 
 import customtkinter as ctk
 
@@ -115,28 +116,37 @@ class AiTab(ctk.CTkFrame):
         bottom.grid(row=2, column=0, sticky="ew", pady=(8, 0))
         bottom.grid_columnconfigure(1, weight=1)
 
+        # barre d'activité : chronomètre + nombre d'actions pendant le travail
+        self.activity_lbl = ctk.CTkLabel(
+            bottom, text="", font=(theme.FONT, 11, "italic"),
+            text_color=theme.ACCENT, anchor="w")
+        self.activity_lbl.grid(row=0, column=0, columnspan=4,
+                               sticky="w", pady=(0, 2))
+        self._busy_since = None
+        self._step_count = 0
+
         self.quick_menu = ctk.CTkOptionMenu(
             bottom, width=210, values=QUICK_PROMPTS, **_MENU_STYLE,
             command=self._quick_pick)
-        self.quick_menu.grid(row=0, column=0, padx=(0, 8))
+        self.quick_menu.grid(row=1, column=0, padx=(0, 8))
 
         self.input_entry = ctk.CTkEntry(
             bottom, placeholder_text="Demandez à l'agent (ex: analyse les logs et corrige la config)…",
             fg_color=theme.PANEL, border_color=theme.BORDER,
             text_color=theme.TEXT, height=36)
-        self.input_entry.grid(row=0, column=1, sticky="ew", padx=(0, 8))
+        self.input_entry.grid(row=1, column=1, sticky="ew", padx=(0, 8))
         self.input_entry.bind("<Return>", lambda e: self._send())
 
         self.analyze_btn = ctk.CTkButton(
             bottom, text="🔍 Analyser les logs", width=150, height=36,
             fg_color=theme.PANEL_2, hover_color=theme.HOVER,
             command=self._analyze)
-        self.analyze_btn.grid(row=0, column=2, padx=(0, 8))
+        self.analyze_btn.grid(row=1, column=2, padx=(0, 8))
         self.send_btn = ctk.CTkButton(
             bottom, text="Envoyer", width=100, height=36,
             fg_color=theme.ACCENT, hover_color=theme.ACCENT_HOVER,
             command=self._send)
-        self.send_btn.grid(row=0, column=3)
+        self.send_btn.grid(row=1, column=3)
 
         self._add_bubble(
             "assistant",
@@ -332,6 +342,26 @@ class AiTab(ctk.CTkFrame):
             ).pack(padx=12, pady=8)
         self.after(50, lambda: self.chat_frame._parent_canvas.yview_moveto(1.0))
 
+    _STEP_COLORS = {
+        "file": theme.ACCENT, "mod": theme.GREEN, "del": theme.RED,
+        "cmd": theme.ORANGE, "error": theme.RED, "search": theme.MUTED,
+        "info": theme.MUTED,
+    }
+
+    def _add_step(self, ev):
+        """Affiche une action de l'agent (fichier modifié, mod installé, …)."""
+        self._step_count += 1
+        row = ctk.CTkFrame(self.chat_frame, fg_color="transparent")
+        row.pack(fill="x", padx=14, pady=(0, 2))
+        color = self._STEP_COLORS.get(ev.get("kind"), theme.MUTED)
+        ctk.CTkLabel(row, text=ev.get("icon", "⚙"), width=24,
+                     font=(theme.FONT, 12)).pack(side="left")
+        ctk.CTkLabel(
+            row, text=ev.get("text", ""), font=(theme.FONT, 11),
+            text_color=color, anchor="w", justify="left",
+            wraplength=780).pack(side="left", fill="x", expand=True)
+        self.after(50, lambda: self.chat_frame._parent_canvas.yview_moveto(1.0))
+
     def _quick_pick(self, value):
         if value != QUICK_PROMPTS[0]:
             self.input_entry.delete(0, "end")
@@ -343,6 +373,22 @@ class AiTab(ctk.CTkFrame):
         state = "disabled" if busy else "normal"
         self.send_btn.configure(state=state)
         self.analyze_btn.configure(state=state)
+        if busy:
+            self._busy_since = time.time()
+            self._step_count = 0
+            self._tick()
+        else:
+            self._busy_since = None
+            self.activity_lbl.configure(text="")
+
+    def _tick(self):
+        if not self._busy:
+            return
+        elapsed = int(time.time() - self._busy_since)
+        self.activity_lbl.configure(
+            text=f"🤖 L'agent travaille — {elapsed} s · "
+                 f"{self._step_count} action(s)")
+        self.after(1000, self._tick)
 
     def _send(self):
         if self._busy:
@@ -364,12 +410,15 @@ class AiTab(ctk.CTkFrame):
         def work():
             try:
                 reply = agent.run(
-                    msg, on_step=lambda s: self.after(0, self._add_bubble, "step", s))
+                    msg, on_step=lambda ev: self.after(0, self._add_step, ev))
             except providers.ProviderError as e:
                 reply = f"⚠ {e}"
             except Exception as e:
                 reply = f"⚠ Erreur inattendue : {e}"
             self.after(0, self._add_bubble, "assistant", reply)
+            summary = agent.summary()
+            if summary:
+                self.after(0, self._add_bubble, "step", summary)
             self.after(0, self._set_busy, False)
 
         threading.Thread(target=work, daemon=True).start()
@@ -390,12 +439,15 @@ class AiTab(ctk.CTkFrame):
         def work():
             try:
                 reply = agent.analyze_logs(
-                    on_step=lambda s: self.after(0, self._add_bubble, "step", s))
+                    on_step=lambda ev: self.after(0, self._add_step, ev))
             except providers.ProviderError as e:
                 reply = f"⚠ {e}"
             except Exception as e:
                 reply = f"⚠ Erreur inattendue : {e}"
             self.after(0, self._add_bubble, "assistant", reply)
+            summary = agent.summary()
+            if summary:
+                self.after(0, self._add_bubble, "step", summary)
             self.after(0, self._set_busy, False)
 
         threading.Thread(target=work, daemon=True).start()

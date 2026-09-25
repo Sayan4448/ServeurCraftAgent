@@ -3,9 +3,15 @@
 ## v0.4.0 — Release (2026-09-25)
 
 **Agent IA**
+- **Timeline d'activité en direct** : chronomètre + chaque action affichée en
+  temps réel (fichier modifié, mod/plugin installé, commande en jeu,
+  recherche Modrinth, erreur) avec icônes colorées, puis **résumé final**
+  « 📋 2 fichiers modifiés · 1 mod installé · 14 s »
 - Nouveaux outils : `search_mods`, `install_mod`, `list_mods`, `remove_mod` —
   l'IA peut chercher, installer et supprimer des mods/plugins Modrinth
   elle-même (« installe JEI et Create » fonctionne directement dans le chat)
+- L'IA peut aussi agir **dans le jeu** quand le serveur tourne : construire
+  une structure (fill/setblock/clone), summon, give, tp… via send_command
 - **Liste des modèles automatique pour tous les providers** : Gemini et
   Anthropic rejoignent OpenAI/Ollama/LM Studio — le champ modèle devient
   une liste déroulante remplie depuis la clé API (⟳ pour rafraîchir),
