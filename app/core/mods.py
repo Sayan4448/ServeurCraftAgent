@@ -95,7 +95,8 @@ def remove_installed(path: str) -> None:
 # ------------------------------------------------------------------- Modrinth
 
 def search_modrinth(query: str, loader: str, mc_version: str,
-                    kind: str = "mod", limit: int = 20) -> list:
+                    kind: str = "mod", limit: int = 20,
+                    offset: int = 0) -> list:
     """Recherche Modrinth. kind = 'mod' | 'plugin'."""
     facets = [["project_type:" + ("plugin" if kind == "plugin" else "mod")]]
     if mc_version:
@@ -110,7 +111,7 @@ def search_modrinth(query: str, loader: str, mc_version: str,
         f"{MODRINTH_API}/search",
         params={
             "query": query, "facets": json.dumps(facets),
-            "limit": limit, "index": "downloads",
+            "limit": limit, "offset": offset, "index": "downloads",
         },
         headers=_UA, timeout=20,
     )
@@ -172,7 +173,8 @@ def _cf_headers(api_key: str) -> dict:
 
 
 def search_curseforge(query: str, loader: str, mc_version: str,
-                      kind: str, api_key: str, limit: int = 20) -> list:
+                      kind: str, api_key: str, limit: int = 20,
+                      offset: int = 0) -> list:
     """Recherche CurseForge. Nécessite une clé API (console.curseforge.com)."""
     if not api_key:
         raise ModError("CurseForge nécessite une clé API "
@@ -180,7 +182,8 @@ def search_curseforge(query: str, loader: str, mc_version: str,
     class_id = CF_CLASS_PLUGIN if kind == "plugin" else CF_CLASS_MOD
     params = {
         "gameId": 432, "classId": class_id, "searchFilter": query,
-        "pageSize": limit, "sortField": 2, "sortOrder": "desc",
+        "pageSize": limit, "index": offset, "sortField": 2,
+        "sortOrder": "desc",
     }
     if mc_version:
         params["gameVersion"] = mc_version
@@ -236,6 +239,80 @@ def install_result(result: dict, server_dir: Path, loader: str,
                                   progress_cb)
     return install_modrinth(result["slug"], server_dir, loader,
                             mc_version, result["kind"], progress_cb)
+
+
+# ------------------------------------------------- versions par projet + dl
+
+def _pick_jar(files: list):
+    return next((f for f in files if f.get("primary")), None) or next(
+        (f for f in files if f["filename"].endswith(".jar")), None)
+
+
+def modrinth_version_list(project_slug: str, loader: str,
+                          mc_version: str, kind: str) -> list:
+    """Toutes les versions d'un projet compatibles loader/MC, plus récentes
+    d'abord. Chaque entrée : name, date, game_versions, release_type, url,
+    filename."""
+    loaders = LOADER_MAP.get(loader, [loader])
+    if loader == "mohist":
+        loaders = ["forge"] if kind == "mod" else ["bukkit", "paper", "spigot"]
+    out = []
+    for v in _modrinth_versions(project_slug, loaders, mc_version):
+        jar = _pick_jar(v.get("files", []))
+        if not jar:
+            continue
+        out.append({
+            "name": v["version_number"],
+            "title": v["name"],
+            "date": v["date_published"][:10],
+            "game_versions": ", ".join(v["game_versions"]),
+            "release_type": v.get("version_type", "release"),
+            "url": jar["url"], "filename": jar["filename"],
+        })
+    return out
+
+
+def curseforge_version_list(mod_id: int, loader: str, mc_version: str,
+                            kind: str, api_key: str) -> list:
+    params = {"pageSize": 50}
+    if mc_version:
+        params["gameVersion"] = mc_version
+    if kind == "mod" and loader in CF_MODLOADER:
+        params["modLoaderType"] = CF_MODLOADER[loader]
+    r = requests.get(f"{CURSEFORGE_API}/mods/{mod_id}/files", params=params,
+                     headers=_cf_headers(api_key), timeout=20)
+    r.raise_for_status()
+    types = {1: "release", 2: "beta", 3: "alpha"}
+    out = []
+    for f in r.json().get("data", []):
+        url = f.get("downloadUrl")
+        if not url:
+            fid = str(f["id"])
+            url = f"{FORGECDN}/{fid[:4]}/{fid[4:]}/{f['fileName']}"
+        out.append({
+            "name": f["displayName"],
+            "title": f["fileName"],
+            "date": f["fileDate"][:10],
+            "game_versions": ", ".join(f["gameVersions"]),
+            "release_type": types.get(f["releaseType"], "?"),
+            "url": url, "filename": f["fileName"],
+        })
+    return out
+
+
+def version_list(result: dict, loader: str, mc_version: str,
+                 api_key: str = "") -> list:
+    if result["source"] == "curseforge":
+        return curseforge_version_list(result["id"], loader, mc_version,
+                                       result["kind"], api_key)
+    return modrinth_version_list(result["slug"], loader, mc_version,
+                                 result["kind"])
+
+
+def download_to(url: str, filename: str, server_dir: Path, loader: str,
+                kind: str, progress_cb=None) -> Path:
+    dest = target_dir(server_dir, loader, kind) / filename
+    return download_file(url, dest, progress_cb)
 
 
 # ---------------------------------------------------------------- Voice Chat

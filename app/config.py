@@ -1,8 +1,22 @@
 """Chemins et persistance des réglages de l'application."""
 import json
+import os
+import sys
 from pathlib import Path
 
-APP_DIR = Path(__file__).resolve().parent.parent
+
+def _base_dir() -> Path:
+    # Version packagée (exe) : données dans %LOCALAPPDATA%\ServerCraftAgent —
+    # Program Files n'est pas accessible en écriture sans admin.
+    if getattr(sys, "frozen", False):
+        root = os.environ.get("LOCALAPPDATA")
+        if root:
+            return Path(root) / "ServerCraftAgent"
+        return Path.home() / "AppData" / "Local" / "ServerCraftAgent"
+    return Path(__file__).resolve().parent.parent
+
+
+APP_DIR = _base_dir()
 DATA_DIR = APP_DIR / "data"
 SERVERS_DIR = APP_DIR / "servers"
 RUNTIMES_DIR = APP_DIR / "runtimes"

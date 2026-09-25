@@ -8,7 +8,7 @@ Produit dist/ServerCraftAgent-<version>-win64.msi
 """
 from cx_Freeze import Executable, setup
 
-APP_VERSION = "0.2.0"
+APP_VERSION = "0.3.0"
 APP_NAME = "ServerCraftAgent"
 
 # Raccourcis créés par l'installateur : Bureau + menu Démarrer.
@@ -45,9 +45,13 @@ bdist_msi_options = {
     # GUID fixe : permet les mises à jour de version en version
     "upgrade_code": "{8F3D7C1E-2A4B-4E5D-9C6A-1B2E3F4A5B6C}",
     "add_to_path": False,
-    "all_users": True,
-    "initial_target_dir": rf"[ProgramFilesFolder]\{APP_NAME}",
+    # Installation par utilisateur : pas d'UAC, pas de Program Files en lecture
+    # seule — l'app et ses raccourcis fonctionnent sans droits admin.
+    "all_users": False,
+    "initial_target_dir": rf"[LocalAppDataFolder]Programs\{APP_NAME}",
     "data": {"Shortcut": shortcut_table},
+    "install_icon": "assets/icon.ico",
+    "summary_data": {"author": "Sayan4448"},
 }
 
 setup(
@@ -63,6 +67,7 @@ setup(
             "main.py",
             base="Win32GUI",          # pas de console noire au lancement
             target_name=f"{APP_NAME}.exe",
+            icon="assets/icon.ico",
         )
     ],
 )
