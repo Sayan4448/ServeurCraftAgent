@@ -1,4 +1,7 @@
 """Fenêtre principale : en-tête + Tabview (3 onglets)."""
+import sys
+from pathlib import Path
+
 import customtkinter as ctk
 
 from . import theme
@@ -14,6 +17,7 @@ class App(ctk.CTk):
         self.geometry("1240x780")
         self.minsize(1040, 660)
         self.configure(fg_color=theme.BG)
+        self.after(250, self._set_icon)
 
         header = ctk.CTkFrame(self, fg_color=theme.PANEL, corner_radius=0, height=56)
         header.pack(fill="x")
@@ -53,3 +57,13 @@ class App(ctk.CTk):
 
         self.ai_tab = AiTab(self.tabview.tab("Agent IA & Outils"))
         self.ai_tab.pack(fill="both", expand=True)
+
+    def _set_icon(self):
+        base = (Path(sys.executable).parent if getattr(sys, "frozen", False)
+                else Path(__file__).resolve().parent.parent.parent)
+        ico = base / "assets" / "icon.ico"
+        if ico.exists():
+            try:
+                self.wm_iconbitmap(str(ico))
+            except Exception:
+                pass

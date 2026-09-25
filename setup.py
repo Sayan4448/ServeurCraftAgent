@@ -8,7 +8,7 @@ Produit dist/ServerCraftAgent-<version>-win64.msi
 """
 from cx_Freeze import Executable, setup
 
-APP_VERSION = "0.3.0"
+APP_VERSION = "0.4.0"
 APP_NAME = "ServerCraftAgent"
 
 # Raccourcis créés par l'installateur : Bureau + menu Démarrer.
@@ -30,7 +30,7 @@ build_exe_options = {
     "zip_exclude_packages": ["*"],
     "packages": ["tkinter", "requests", "darkdetect", "customtkinter", "PIL"],
     # fichiers embarqués à côté de l'exe dans le dossier d'installation
-    "include_files": ["README.md", "CHANGELOG.md"],
+    "include_files": ["README.md", "CHANGELOG.md", "assets"],
     "excludes": [
         "pytest", "unittest", "test", "setuptools", "pip", "wheel",
         "IPython", "matplotlib", "numpy", "pandas", "scipy", "torch",

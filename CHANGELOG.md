@@ -1,5 +1,20 @@
 # Versions — ServerCraft Agent
 
+## v0.4.0 — Release (2026-09-25)
+
+**Agent IA**
+- Nouveaux outils : `search_mods`, `install_mod`, `list_mods`, `remove_mod` —
+  l'IA peut chercher, installer et supprimer des mods/plugins Modrinth
+  elle-même (« installe JEI et Create » fonctionne directement dans le chat)
+- **Liste des modèles automatique pour tous les providers** : Gemini et
+  Anthropic rejoignent OpenAI/Ollama/LM Studio — le champ modèle devient
+  une liste déroulante remplie depuis la clé API (⟳ pour rafraîchir),
+  toujours éditable à la main
+
+**Icône**
+- Nouveau logo « rack serveur » (aucun visuel Minecraft protégé) appliqué
+  à l'exe, la fenêtre, les raccourcis et l'installateur
+
 ## v0.3.0 — Release (2026-09-25)
 
 **Correctifs majeurs**

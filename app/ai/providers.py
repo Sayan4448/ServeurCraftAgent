@@ -40,6 +40,27 @@ def list_models(provider: str, settings: dict) -> list:
             base = settings.get("custom_base", "").rstrip("/")
             if base:
                 return _list_openai_models(base, settings.get("custom_key", ""))
+        if provider == "gemini":
+            key = settings.get("gemini_api_key", "").strip()
+            if not key:
+                return []
+            r = requests.get(GEMINI_API, params={"key": key, "pageSize": 200},
+                             timeout=10)
+            r.raise_for_status()
+            return sorted(
+                m["name"].split("/")[-1]
+                for m in r.json().get("models", [])
+                if "generateContent" in m.get("supportedGenerationMethods", []))
+        if provider == "anthropic":
+            key = settings.get("anthropic_api_key", "").strip()
+            if not key:
+                return []
+            r = requests.get(
+                "https://api.anthropic.com/v1/models", timeout=10,
+                headers={"x-api-key": key,
+                         "anthropic-version": ANTHROPIC_VERSION})
+            r.raise_for_status()
+            return sorted(m["id"] for m in r.json().get("data", []))
     except requests.RequestException:
         pass
     return []

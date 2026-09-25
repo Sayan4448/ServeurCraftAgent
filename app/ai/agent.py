@@ -8,6 +8,7 @@ import re
 from pathlib import Path
 
 from ..core import server_manager as sm
+from ..core import mods as mods_mod
 from ..core.properties import load_properties, save_properties
 from . import providers
 
@@ -38,6 +39,10 @@ Outils disponibles :
 - write_file(path, content)         : réécrit un fichier de config (.properties/.yml/.json/...)
 - edit_properties(path, changes)    : modifie des clés d'un fichier .properties/.yml {clé: valeur}
 - send_command(cmd)                 : envoie une commande à la console du serveur (si lancé)
+- search_mods(query, kind)          : cherche sur Modrinth ("mod"|"plugin", optionnel) → slug|titre|téléch.
+- install_mod(name, kind)           : installe un mod/plugin Modrinth par slug ou nom (recherche auto)
+- list_mods()                       : liste les mods/plugins installés sur le serveur
+- remove_mod(filename)              : supprime un fichier installé dans mods/ ou plugins/
 
 Règles :
 - Les chemins sont relatifs à la racine du serveur (ex: "server.properties", "logs/latest.log",
@@ -46,6 +51,9 @@ Règles :
 - Quand tu modifies une config, dis exactement ce que tu as changé et pourquoi.
 - Pour la RAM, rappelle qu'elle se règle dans les métadonnées du serveur (servercraft.json, clé ram_mb)
   ou via l'onglet "Mes Serveurs", pas dans server.properties.
+- Pour installer un mod ou un plugin demandé par l'utilisateur, utilise install_mod directement
+  (Modrinth, sans clé) — précise kind="plugin" sur les loaders Bukkit/Paper/Mohist quand pertinent.
+  Vérifie avec list_mods() ce qui est déjà installé avant d'installer.
 """
 
 
@@ -193,3 +201,55 @@ class Agent:
         if not proc or not proc.is_running():
             return "Serveur non lancé — commande non envoyée."
         return "Commande envoyée." if proc.send(cmd) else "Échec d'envoi."
+
+    # ------------------------------------------------------------- mods
+
+    def _meta(self) -> dict:
+        return sm.load_meta(self.dir)
+
+    def _tool_search_mods(self, query: str, kind: str = "") -> str:
+        meta = self._meta()
+        kind = kind or mods_mod.default_kind(meta["loader"])
+        hits = mods_mod.search_modrinth(
+            query, meta["loader"], meta["mc_version"], kind, limit=6)
+        if not hits:
+            return f"Aucun résultat Modrinth ({kind}) pour « {query} »."
+        return "\n".join(
+            f"{h['slug']} | {h['title']} | ⬇{h['downloads']} | {h['description'][:80]}"
+            for h in hits)
+
+    def _tool_install_mod(self, name: str, kind: str = "") -> str:
+        meta = self._meta()
+        loader, mc = meta["loader"], meta["mc_version"]
+        if not kind:
+            kind = "mod" if mods_mod.supports_mods(loader) else "plugin"
+        if kind == "mod" and not mods_mod.supports_mods(loader):
+            return f"Le loader {loader} ne supporte pas les mods — utilise kind=\"plugin\"."
+        if kind == "plugin" and not mods_mod.supports_plugins(loader):
+            return f"Le loader {loader} ne supporte pas les plugins — utilise kind=\"mod\"."
+        try:
+            path = mods_mod.install_modrinth(name, self.dir, loader, mc, kind)
+            return f"{path.name} installé dans {path.parent.name}/."
+        except Exception:
+            hits = mods_mod.search_modrinth(name, loader, mc, kind, limit=5)
+            if not hits:
+                return f"« {name} » introuvable sur Modrinth."
+            path = mods_mod.install_modrinth(
+                hits[0]["slug"], self.dir, loader, mc, kind)
+            return (f"{path.name} installé ({hits[0]['title']}) "
+                    f"dans {path.parent.name}/.")
+
+    def _tool_list_mods(self) -> str:
+        meta = self._meta()
+        items = mods_mod.list_installed(self.dir, meta["loader"])
+        if not items:
+            return "(aucun mod/plugin installé)"
+        return "\n".join(f"{i['kind']} | {i['name']}" for i in items)
+
+    def _tool_remove_mod(self, filename: str) -> str:
+        for d in ("mods", "plugins"):
+            p = self._safe_path(f"{d}/{filename}")
+            if p.exists() and p.is_file():
+                p.unlink()
+                return f"{d}/{filename} supprimé."
+        return f"{filename} introuvable dans mods/ ni plugins/."

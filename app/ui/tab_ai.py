@@ -25,6 +25,12 @@ _ENTRY_STYLE = dict(fg_color=theme.PANEL_2, border_color=theme.BORDER,
                     text_color=theme.TEXT)
 _MENU_STYLE = dict(fg_color=theme.PANEL_2, button_color=theme.ACCENT,
                    button_hover_color=theme.ACCENT_HOVER, text_color=theme.TEXT)
+_COMBO_STYLE = dict(fg_color=theme.PANEL_2, border_color=theme.BORDER,
+                    button_color=theme.ACCENT,
+                    button_hover_color=theme.ACCENT_HOVER,
+                    dropdown_fg_color=theme.PANEL_2,
+                    dropdown_hover_color=theme.HOVER,
+                    dropdown_text_color=theme.TEXT, text_color=theme.TEXT)
 
 
 class AiTab(ctk.CTkFrame):
@@ -153,9 +159,10 @@ class AiTab(ctk.CTkFrame):
         return e
 
     def _model_menu(self, parent, provider):
-        current = self.settings.get(f"{provider}_model", "") or "(modèle)"
-        menu = ctk.CTkOptionMenu(parent, width=170, values=[current],
-                               **_MENU_STYLE)
+        current = self.settings.get(f"{provider}_model", "")
+        menu = ctk.CTkComboBox(parent, width=180,
+                               values=[current] if current else [],
+                               **_COMBO_STYLE)
         menu.set(current)
         menu.pack(side="left", padx=(0, 4))
         self._model_menus[provider] = menu
@@ -167,12 +174,13 @@ class AiTab(ctk.CTkFrame):
                       command=lambda: self._refresh_models(provider),
                       ).pack(side="left")
 
-    def _build_key_model(self, key_key, model_key, key_ph):
+    def _build_key_model(self, key_key, model_key, key_ph, provider=None):
         f = ctk.CTkFrame(self.fields_holder, fg_color="transparent")
         self._label(f, "Clé API")
         self._entry(f, key_key, 210, key_ph, secret=True)
         self._label(f, "Modèle")
-        self._entry(f, model_key, 160)
+        self._model_menu(f, provider or model_key.rsplit("_", 1)[0])
+        self._refresh_btn(f, provider or model_key.rsplit("_", 1)[0])
         return f
 
     def _build_openai(self):
@@ -182,7 +190,8 @@ class AiTab(ctk.CTkFrame):
         self._label(f, "Base")
         self._entry(f, "openai_base", 175)
         self._label(f, "Modèle")
-        self._entry(f, "openai_model", 130)
+        self._model_menu(f, "openai")
+        self._refresh_btn(f, "openai")
         return f
 
     def _build_local(self, provider, url_key):
@@ -200,7 +209,8 @@ class AiTab(ctk.CTkFrame):
         self._label(f, "Clé")
         self._entry(f, "custom_key", 110, secret=True)
         self._label(f, "Modèle")
-        self._entry(f, "custom_model", 130)
+        self._model_menu(f, "custom")
+        self._refresh_btn(f, "custom")
         return f
 
     def _provider_changed(self, label):
@@ -210,28 +220,29 @@ class AiTab(ctk.CTkFrame):
         for f in self.fields.values():
             f.pack_forget()
         self.fields[key].pack(side="left")
-        if key in providers.LOCAL_PROVIDERS:
-            self._refresh_models(key)
+        self._refresh_models(key, silent=True)
 
-    def _refresh_models(self, provider):
+    def _refresh_models(self, provider, silent=False):
         self._sync_settings()
 
         def work():
             models = providers.list_models(provider, self.settings)
-            self.after(0, self._set_models, provider, models)
+            self.after(0, self._set_models, provider, models, silent)
 
         threading.Thread(target=work, daemon=True).start()
 
-    def _set_models(self, provider, models):
+    def _set_models(self, provider, models, silent=False):
         menu = self._model_menus[provider]
         if models:
+            current = menu.get().strip()
             menu.configure(values=models)
-            menu.set(models[0])
-        else:
+            if current not in models:
+                menu.set(models[0])
+        elif not silent:
             self._add_bubble(
                 "step",
                 f"{providers.PROVIDERS[provider]} : aucun modèle trouvé — "
-                "le serveur local est-il lancé ?")
+                "clé API/URL correcte, service lancé ?")
 
     # ------------------------------------------------------------- serveurs
 
