@@ -344,8 +344,8 @@ class AiTab(ctk.CTkFrame):
 
     _STEP_COLORS = {
         "file": theme.ACCENT, "mod": theme.GREEN, "del": theme.RED,
-        "cmd": theme.ORANGE, "error": theme.RED, "search": theme.MUTED,
-        "info": theme.MUTED,
+        "cmd": theme.ORANGE, "build": theme.ORANGE, "error": theme.RED,
+        "search": theme.MUTED, "info": theme.MUTED,
     }
 
     def _add_step(self, ev):

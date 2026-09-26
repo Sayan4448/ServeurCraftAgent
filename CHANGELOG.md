@@ -10,8 +10,10 @@
 - Nouveaux outils : `search_mods`, `install_mod`, `list_mods`, `remove_mod` —
   l'IA peut chercher, installer et supprimer des mods/plugins Modrinth
   elle-même (« installe JEI et Create » fonctionne directement dans le chat)
-- L'IA peut aussi agir **dans le jeu** quand le serveur tourne : construire
-  une structure (fill/setblock/clone), summon, give, tp… via send_command
+- L'IA peut aussi agir **dans le jeu** quand le serveur tourne : nouvel outil
+  `build_structure` avec blueprints complets (**prison** avec cellules à
+  barreaux et portes en fer, cage, maison, mur, arène, fontaine, tour) —
+  plus fill/setblock/summon/give/tp en sur-mesure via send_command
 - **Liste des modèles automatique pour tous les providers** : Gemini et
   Anthropic rejoignent OpenAI/Ollama/LM Studio — le champ modèle devient
   une liste déroulante remplie depuis la clé API (⟳ pour rafraîchir),

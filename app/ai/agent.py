@@ -44,6 +44,8 @@ Outils disponibles :
 - install_mod(name, kind)           : installe un mod/plugin Modrinth par slug ou nom (recherche auto)
 - list_mods()                       : liste les mods/plugins installés sur le serveur
 - remove_mod(filename)              : supprime un fichier installé dans mods/ ou plugins/
+- build_structure(type, x, y, z, size) : construit une structure complète en jeu
+  (types : prison, cage, maison, mur, arene, fontaine, tour) — serveur lancé requis
 
 Règles :
 - Les chemins sont relatifs à la racine du serveur (ex: "server.properties", "logs/latest.log",
@@ -55,9 +57,11 @@ Règles :
 - Pour installer un mod ou un plugin demandé par l'utilisateur, utilise install_mod directement
   (Modrinth, sans clé) — précise kind="plugin" sur les loaders Bukkit/Paper/Mohist quand pertinent.
   Vérifie avec list_mods() ce qui est déjà installé avant d'installer.
-- Si le serveur est lancé, tu peux aussi agir DANS LE JEU via send_command : construire une
-  structure (fill, setblock, clone), invoquer des entités (summon), donner des items (give),
-  téléporter (tp), etc. Décris ensuite ce que tu as construit/fait.
+- Si le serveur est lancé, tu peux aussi agir DANS LE JEU : construire avec
+  build_structure (ou fill/setblock/clone via send_command pour du sur-mesure),
+  invoquer des entités (summon), donner des items (give), téléporter (tp), etc.
+  Demande les coordonnées au joueur si elles ne sont pas précisées, ou propose
+  des coordonnées (ex : spawn ≈ 0 65 0). Décris ensuite ce que tu as construit.
 """
 
 
@@ -71,7 +75,7 @@ class Agent:
     # ------------------------------------------------------------ conversation
 
     def run(self, user_msg: str, on_step=None) -> str:
-        self.stats = {"files": set(), "mods": [], "removed": [],
+        self.stats = {"files": set(), "mods": [], "removed": [], "built": [],
                       "commands": [], "searches": [], "errors": 0}
         self._start_ts = time.time()
         self.history.append({"role": "user", "content": user_msg})
@@ -112,6 +116,9 @@ class Agent:
         if s["removed"]:
             parts.append(f"{len(s['removed'])} supprimé(s) : "
                          + ", ".join(s["removed"][:5]))
+        if s["built"]:
+            parts.append(f"{len(s['built'])} structure(s) construite(s) : "
+                         + ", ".join(s["built"]))
         if s["commands"]:
             parts.append(f"{len(s['commands'])} commande(s) en jeu")
         if s["searches"]:
@@ -135,6 +142,8 @@ class Agent:
             self.stats["removed"].append(act.get("filename", ""))
         elif k == "cmd":
             self.stats["commands"].append(act.get("cmd", ""))
+        elif k == "build":
+            self.stats["built"].append(act.get("type", ""))
         elif k == "search":
             self.stats["searches"].append(act.get("query", ""))
 
@@ -211,6 +220,9 @@ class Agent:
             icon, text, kind = "🔧", f"Config modifiée : {act.get('path')} ({keys})", "file"
         elif tool == "send_command":
             icon, text, kind = "⚡", f"Commande en jeu : {act.get('cmd')}", "cmd"
+        elif tool == "build_structure":
+            icon, text, kind = "🏗️", (f"Construction {act.get('type')} "
+                f"en ({act.get('x')}, {act.get('y')}, {act.get('z')})"), "build"
         elif tool == "search_mods":
             icon, text, kind = "🔍", f"Recherche Modrinth : « {act.get('query')} »", "search"
         elif tool == "install_mod":
@@ -344,3 +356,23 @@ class Agent:
                 p.unlink()
                 return f"{d}/{filename} supprimé."
         return f"{filename} introuvable dans mods/ ni plugins/."
+
+    # --------------------------------------------------------- construction
+
+    def _tool_build_structure(self, type: str, x: int = 0, y: int = 65,
+                              z: int = 0, size: int = 0) -> str:
+        from ..core.structures import BLUEPRINTS
+        if type not in BLUEPRINTS:
+            return (f"Type inconnu — disponibles : "
+                    f"{', '.join(sorted(BLUEPRINTS))}")
+        proc = sm.PROCESSES.get(self.server_name)
+        if not proc or not proc.is_running():
+            return "Serveur non lancé — impossible de construire en jeu."
+        cmds = BLUEPRINTS[type](int(x), int(y), int(z), int(size))
+        if len(cmds) > 3000:
+            return "Structure trop grande (limite 3000 commandes)."
+        for c in cmds:
+            proc.send(c)
+            time.sleep(0.02)
+        return (f"{type} construit en {x} {y} {z} "
+                f"— {len(cmds)} commandes exécutées.")
