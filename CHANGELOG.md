@@ -1,5 +1,19 @@
 # Versions — ServerCraft Agent
 
+## v0.7.0 — Release (2026-09-28)
+
+Version consolidée avant la 1.0. Reprend tout le contenu de la 0.5.5 :
+- **Fiche joueur** « Carte & inventaire » : mini-carte du monde (.mca,
+  sans plugin), coordonnées exactes, inventaire + Ender chest gérables
+  en ligne ou hors ligne
+- **Tunnels Playit.gg** multiples (Java/Bedrock/Voice Chat + ajouts
+  illimités), adresse du tunnel = puce « Internet »
+- **Bannis & Opérateurs** administrables hors ligne (OP avant déban)
+- **Import de modpack** .mrpack / CurseForge / dossier avec tri
+  client/serveur automatique
+- Console : réponses des commandes internes masquées (plus de spam
+  « There are X of a max… »), mémoire allégée
+
 ## v0.5.5 — Release (2026-09-28)
 
 **Fiche joueur « Carte & inventaire »** (menu ⋯ d'un joueur → 🗺)
