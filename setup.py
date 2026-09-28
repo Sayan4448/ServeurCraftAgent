@@ -33,7 +33,7 @@ build_exe_options = {
     "include_files": ["README.md", "CHANGELOG.md", "assets"],
     "excludes": [
         "pytest", "unittest", "test", "setuptools", "pip", "wheel",
-        "IPython", "matplotlib", "numpy", "pandas", "scipy", "torch",
+        "IPython", "matplotlib", "pandas", "scipy", "torch",
         "cv2", "jupyter_client", "jupyter_core", "notebook", "pygments",
         "prompt_toolkit", "traitlets", "PyQt5", "PyQt6", "PySide2",
         "PySide6", "sphinx", "docutils",
