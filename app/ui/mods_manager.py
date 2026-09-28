@@ -373,45 +373,64 @@ class ModsManager(ctk.CTkToplevel):
 
     # ---------------------------------------------------------- modpack
     def _import_modpack(self):
-        from tkinter import filedialog
-        path = filedialog.askopenfilename(
-            parent=self, title=t("mp_pick"),
-            filetypes=[("Modpack", "*.zip"), ("Jar", "*.jar")])
+        path = pick_modpack(self)
         if not path:
             return
         self._set_status(t("mp_analyzing"))
+        cf_key = self.cf_key.get().strip() or \
+            load_settings().get("curseforge_api_key", "")
 
         def work():
             from ..core import modpack
-            jars = modpack.collect_jars(Path(path))
-            result = (modpack.analyze(jars) if jars else
-                      {"server": [], "client": [], "unknown": []})
             try:
+                pack = modpack.read_pack(path)
+                result = modpack.plan(pack, cf_key=cf_key,
+                                      log=lambda m: ui_call(
+                                          self, self._set_status, m))
                 ui_call(self, self._show_modpack_result, result)
-            except RuntimeError:
-                pass
+            except Exception as e:  # noqa: BLE001
+                ui_call(self, self._set_status, t("mods_error", e=e))
         threading.Thread(target=work, daemon=True).start()
 
     def _show_modpack_result(self, result: dict):
         self._set_status("")
-        n = sum(len(v) for v in result.values())
+        n = sum(len(result[k]) for k in ("server", "client", "unknown"))
         if not n:
             self._set_status(t("mp_none"))
             return
-        ModpackDialog(self, result)
+        ModpackDialog(self, result, self.server_dir,
+                      on_done=self._refresh_installed)
+
+
+def pick_modpack(parent):
+    """Fichier .mrpack/.zip ou dossier d'instance (Prism, MultiMC…)."""
+    from tkinter import filedialog
+    choice = messagebox.askyesnocancel(t("mp_pick"), t("mp_pick_kind"),
+                                       parent=parent)
+    if choice is None:
+        return None
+    if choice:
+        return filedialog.askopenfilename(
+            parent=parent, title=t("mp_pick"),
+            filetypes=[("Modpack", "*.mrpack *.zip"), ("Tous", "*.*")])
+    return filedialog.askdirectory(parent=parent, title=t("mp_pick_folder"))
 
 
 class ModpackDialog(ctk.CTkToplevel):
-    """Résultat de l'analyse : mods serveur / mods client / inconnus."""
+    """Résultat de l'analyse : mods serveur / mods client / indéterminés."""
 
-    def __init__(self, manager: ModsManager, result: dict):
-        super().__init__(manager)
-        self.manager = manager
+    def __init__(self, master, result: dict, server_dir, on_done=None):
+        super().__init__(master)
+        self.manager = master
+        self.server_dir = Path(server_dir)
+        self.on_done = on_done
         self.result = result
-        self.title(t("mp_result", n=sum(len(v) for v in result.values())))
-        self.geometry("640x560")
+        self.title(t("mp_result", n=sum(len(result[k]) for k in
+                                        ("server", "client", "unknown"))))
+        self.geometry("660x600")
         self.configure(fg_color=theme.BG)
-        self.transient(manager)
+        self.transient(master)
+        self.after(100, self.lift)
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(2, weight=1)
 
@@ -437,12 +456,13 @@ class ModpackDialog(ctk.CTkToplevel):
         self.status = ctk.CTkLabel(self, text="", text_color=theme.GREEN,
                                    font=(theme.FONT, 11))
         self.status.grid(row=3, column=0, sticky="w", padx=16)
-        ctk.CTkButton(
+        self.install_btn = ctk.CTkButton(
             self, text=t("mp_install"), height=36,
             font=(theme.FONT, 13, "bold"), fg_color=theme.GREEN,
             hover_color=theme.GREEN_HOVER, text_color=theme.ON_GREEN,
-            command=self._install).grid(row=4, column=0, sticky="ew",
-                                        padx=12, pady=(4, 12))
+            command=self._install)
+        self.install_btn.grid(row=4, column=0, sticky="ew", padx=12,
+                              pady=(4, 12))
 
     def _section(self, parent, title, items, color):
         if not items:
@@ -450,26 +470,45 @@ class ModpackDialog(ctk.CTkToplevel):
         ctk.CTkLabel(parent, text=title, font=(theme.FONT, 12, "bold"),
                      text_color=color, anchor="w").pack(
             fill="x", padx=6, pady=(10, 2))
-        for path, name in items:
+        for it in items:
             row = ctk.CTkFrame(parent, fg_color=theme.PANEL_2,
                                corner_radius=6)
             row.pack(fill="x", padx=4, pady=1)
-            ctk.CTkLabel(row, text=name, font=(theme.FONT, 11),
+            ctk.CTkLabel(row, text=it.get("title") or it["name"],
+                         font=(theme.FONT, 11),
                          text_color=theme.TEXT, anchor="w").pack(
                 side="left", padx=8, pady=5)
-            ctk.CTkLabel(row, text=Path(path).name,
+            ctk.CTkLabel(row, text=it["name"],
                          font=(theme.FONT, 9), text_color=theme.MUTED,
                          anchor="e").pack(side="right", padx=8)
 
     def _install(self):
         from ..core import modpack
-        files = [p for p, _t in self.result["server"]]
-        if self.inc_client.get():
-            files += [p for p, _t in self.result["client"]]
-        files += [p for p, _t in self.result["unknown"]]
-        n = modpack.install(files, self.manager.server_dir, "mods")
-        self.status.configure(text=t("mp_installed_n", n=n))
-        self.manager._refresh_installed()
+        self.install_btn.configure(state="disabled")
+        self.status.configure(text=t("cp_installing"),
+                              text_color=theme.ORANGE)
+        inc = bool(self.inc_client.get())
+
+        def work():
+            try:
+                res = modpack.apply_plan(self.result, self.server_dir,
+                                         include_client=inc,
+                                         log=lambda m: ui_call(
+                                             self, self._status, m))
+                ui_call(self, self._done, res)
+            except Exception as e:  # noqa: BLE001
+                ui_call(self, self._status, t("mods_error", e=e))
+        threading.Thread(target=work, daemon=True).start()
+
+    def _status(self, text):
+        self.status.configure(text=text)
+
+    def _done(self, res):
+        self.status.configure(
+            text=t("mp_done", n=res["installed"], c=res["client_skipped"],
+                   f=res["configs"]), text_color=theme.GREEN)
+        if self.on_done:
+            self.on_done()
 
 
 class ModDetailDialog(ctk.CTkToplevel):

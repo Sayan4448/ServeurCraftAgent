@@ -8,7 +8,7 @@ Produit dist/ServerCraftAgent-<version>-win64.msi
 """
 from cx_Freeze import Executable, setup
 
-APP_VERSION = "0.5.0"
+APP_VERSION = "0.5.5"
 APP_NAME = "ServerCraftAgent"
 
 # Raccourcis créés par l'installateur : Bureau + menu Démarrer.
@@ -28,7 +28,7 @@ build_exe_options = {
     # indispensable pour les assets de customtkinter (thèmes .json, polices)
     # et le bundle de certificats de certifi (SSL).
     "zip_exclude_packages": ["*"],
-    "packages": ["tkinter", "requests", "darkdetect", "customtkinter", "PIL", "psutil"],
+    "packages": ["tkinter", "requests", "darkdetect", "customtkinter", "PIL", "psutil", "nbtlib"],
     # fichiers embarqués à côté de l'exe dans le dossier d'installation
     "include_files": ["README.md", "CHANGELOG.md", "assets"],
     "excludes": [

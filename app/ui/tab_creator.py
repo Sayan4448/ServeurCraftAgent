@@ -7,6 +7,7 @@ import customtkinter as ctk
 from ..core import downloader, mods as mods_mod, server_manager as sm
 from ..i18n import t
 from . import theme
+from .tunnels_editor import TunnelsEditor
 from .uithread import ui_call
 
 _LABEL_TO_LOADER = {v: k for k, v in downloader.LOADER_LABELS.items()}
@@ -144,20 +145,10 @@ class CreatorTab(ctk.CTkFrame):
                                          corner_radius=8)
         self.playit_frame.grid(row=12, column=0, columnspan=2, sticky="ew",
                                padx=16, pady=(0, 10))
-        self.playit_frame.grid_columnconfigure(1, weight=1)
-        for i, (lab, default, ph) in enumerate((
-                (t("cre_addr"), "", t("cre_addr_ph")),
-                (t("cre_tcp"), "25565", t("cre_tcp_ph")),
-                (t("cre_udp"), "24454", t("cre_udp_ph")))):
-            ctk.CTkLabel(self.playit_frame, text=lab, text_color=theme.MUTED,
-                         font=(theme.FONT, 11)).grid(
-                row=i, column=0, sticky="w", padx=12, pady=4)
-            e = ctk.CTkEntry(self.playit_frame, placeholder_text=ph,
-                             **entry_style)
-            if default:
-                e.insert(0, default)
-            e.grid(row=i, column=1, sticky="ew", padx=12, pady=4)
-            setattr(self, f"playit_{['addr', 'tcp', 'udp'][i]}", e)
+        self.playit_frame.grid_columnconfigure(0, weight=1)
+        self.tunnels_editor = TunnelsEditor(self.playit_frame)
+        self.tunnels_editor.grid(row=0, column=0, sticky="ew", padx=10,
+                                 pady=10)
         self.playit_frame.grid_remove()
 
         self.create_btn = ctk.CTkButton(
@@ -258,17 +249,12 @@ class CreatorTab(ctk.CTkFrame):
             voice = ("simple_voice_chat" if self.voice_choice.get()
                      == "Simple Voice Chat" else "plasmo_voice")
 
-        playit = {}
+        tunnels = []
         if self.playit_check.get():
-            addr = self.playit_addr.get().strip()
-            if not addr:
+            tunnels = self.tunnels_editor.get()
+            if not tunnels:
                 messagebox.showwarning("Playit", t("cre_need_addr"))
                 return
-            playit = {
-                "address": addr,
-                "tcp_port": self.playit_tcp.get().strip() or "25565",
-                "udp_port": self.playit_udp.get().strip() or "0",
-            }
 
         try:
             ram_mb = int(float(self.ram_entry.get().replace(",", ".")) * 1024)
@@ -297,7 +283,7 @@ class CreatorTab(ctk.CTkFrame):
                                    else "false"),
             },
             "voice": voice,
-            "playit": playit,
+            "tunnels": tunnels,
         }
 
         self._creating = True

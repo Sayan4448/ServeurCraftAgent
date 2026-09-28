@@ -18,6 +18,7 @@ from ..core import ranks as ranks_mod
 from ..core import server_manager as sm
 from ..core.downloader import LOADER_LABELS
 from ..core.server_net import local_ip, playit_address, public_ip
+from .player_card import PlayerCard
 from ..i18n import t
 from . import theme
 
@@ -140,16 +141,31 @@ class ServerWindow(ctk.CTkToplevel):
                              width=300)
         right.grid(row=1, column=1, sticky="ns", padx=(5, 10), pady=(0, 10))
         right.grid_propagate(False)
-        right.grid_rowconfigure(1, weight=1)
+        right.grid_rowconfigure(2, weight=1)
         right.grid_columnconfigure(0, weight=1)
         self.players_header = ctk.CTkLabel(
             right, text=t("players_online", n=0),
             font=(theme.FONT, 13, "bold"), text_color=theme.TEXT)
         self.players_header.grid(row=0, column=0, sticky="w", padx=12, pady=10)
+        self._pviews = [t("pv_online"), t("pv_bans"), t("pv_ops")]
+        seg = ctk.CTkSegmentedButton(
+            right, values=self._pviews, command=self._show_pview,
+            selected_color=theme.SEL, text_color=theme.TEXT,
+            selected_hover_color=theme.SEL_HOVER,
+            unselected_color=theme.PANEL_2,
+            unselected_hover_color=theme.HOVER)
+        seg.set(self._pviews[0])
+        seg.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 8))
         self.players_frame = ctk.CTkScrollableFrame(
             right, fg_color="transparent")
-        self.players_frame.grid(row=1, column=0, sticky="nsew", padx=6,
+        self.players_frame.grid(row=2, column=0, sticky="nsew", padx=6,
                                 pady=(0, 8))
+        from .players_panel import BansView, OpsView, ctx_for
+        self.bans_view = BansView(right, lambda: ctx_for(self.proc))
+        self.ops_view = OpsView(right, lambda: ctx_for(self.proc))
+        for v in (self.bans_view, self.ops_view):
+            v.grid(row=2, column=0, sticky="nsew", padx=6, pady=(0, 8))
+            v.grid_remove()
 
         self._show_ip()
         self._pump()
@@ -218,12 +234,25 @@ class ServerWindow(ctk.CTkToplevel):
                             theme.ORANGE_HOVER)
 
     def _show_ip(self):
-        port = self.proc.meta.get("port", 25565)
-        pub = playit_address(self.dir) or self._pub_ip
+        meta = self.proc.meta
+        port = meta.get("port", 25565)
+        tunnels = meta.get("tunnels") or []
+        java_tn = next((tn for tn in tunnels if tn["proto"] == "tcp"
+                        and tn["local"] == port), None)
+        net_addr = ((java_tn or {}).get("address")
+                    or (playit_address(self.dir) if not tunnels else None))
+        if net_addr:
+            right = f"{t('ip_internet')} : {net_addr}"
+            hint = t("ip_hint_ok")
+        else:
+            pub = self._pub_ip
+            right = (t("ip_public_port", ip=pub, port=port) if pub
+                     else t("ip_public_wait"))
+            hint = t("ip_hint_wan", port=port)
         self.ip_lbl.configure(
-            text=f"{t('ip_local', ip=local_ip(), port=port)}    " +
-                 (t("ip_public", ip=pub) if pub else t("ip_public_wait")))
-        if not pub and self._pub_ip is None:
+            text=f"{t('ip_local', ip=local_ip(), port=port)}    {right}\n"
+                 f"{hint}")
+        if not net_addr and not self._pub_ip and self._pub_ip is None:
             self._pub_ip = ""
 
             def _fetch():             # thread : pas de Tk ici
@@ -294,9 +323,25 @@ class ServerWindow(ctk.CTkToplevel):
         meta = dict(self.proc.meta)
         meta["dir"] = str(self.dir)
         meta["name"] = self.name
-        ServerSettings(self, meta)
+        ServerSettings(self, meta, on_saved=self._settings_saved)
+
+    def _settings_saved(self):
+        self.proc.reload_meta()
+        self._show_ip()
 
     # ------------------------------------------------------------ joueurs
+
+    def _show_pview(self, value):
+        views = {self._pviews[0]: self.players_frame,
+                 self._pviews[1]: self.bans_view,
+                 self._pviews[2]: self.ops_view}
+        for k, v in views.items():
+            if k == value:
+                v.grid()
+            else:
+                v.grid_remove()
+        if value != self._pviews[0]:
+            views[value].refresh()
 
     def _render_players(self):
         for w in self.players_frame.winfo_children():
@@ -394,6 +439,9 @@ class ServerWindow(ctk.CTkToplevel):
             fn(self.proc, *args)
             self.proc.log(f"> {fn.__name__} {name} {' '.join(args[1:])}")
 
+        menu.add_command(
+            label="🗺 " + t("pm_card"),
+            command=lambda: PlayerCard(self, self.proc, name))
         menu.add_command(label=t("set_rank"),
                          command=lambda: self._set_rank(name))
         menu.add_separator()

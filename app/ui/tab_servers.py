@@ -18,9 +18,11 @@ from ..core.crossplay import BEDROCK_PORT
 from ..core.downloader import LOADER_LABELS
 from ..core.properties import load_properties
 from ..core.server_net import local_ip, playit_address, public_ip
+from .player_card import PlayerCard
 from ..i18n import t
 from . import theme
 from .mods_manager import ModsManager
+from .players_panel import BansView, OpsView, ctx_for
 from .server_settings import ServerSettings
 from .server_window import ServerWindow
 
@@ -166,8 +168,13 @@ class ServersTab(ctk.CTkFrame):
         self.info_label.grid(row=1, column=0, sticky="w", padx=16)
 
         self.ip_row = ctk.CTkFrame(head, fg_color="transparent")
-        self.ip_row.grid(row=2, column=0, sticky="w", padx=12, pady=(6, 12))
+        self.ip_row.grid(row=2, column=0, sticky="w", padx=12, pady=(6, 0))
         self._ip_chips: list[ctk.CTkButton] = []
+        self.ip_hint = ctk.CTkLabel(head, text="", font=(theme.FONT, 10),
+                                    text_color=theme.MUTED, anchor="w",
+                                    justify="left")
+        self.ip_hint.grid(row=3, column=0, sticky="w", padx=16,
+                          pady=(2, 10))
 
         # ---------------------------------------------------- stats
         stats = ctk.CTkFrame(col, fg_color="transparent")
@@ -237,20 +244,48 @@ class ServersTab(ctk.CTkFrame):
     def _build_players_col(self):
         col = theme.card(self)
         col.grid(row=0, column=2, sticky="nsew")
-        col.grid_rowconfigure(1, weight=1)
+        col.grid_rowconfigure(2, weight=1)
         col.grid_columnconfigure(0, weight=1)
         self.players_title = ctk.CTkLabel(
             col, text=t("players_online", n=0), font=(theme.FONT, 14, "bold"),
             text_color=theme.TEXT)
         self.players_title.grid(row=0, column=0, sticky="w", padx=14,
                                 pady=(12, 6))
+        self._pviews = [t("pv_online"), t("pv_bans"), t("pv_ops")]
+        self.pview_seg = ctk.CTkSegmentedButton(
+            col, values=self._pviews, command=self._show_pview,
+            selected_color=theme.SEL, text_color=theme.TEXT,
+            selected_hover_color=theme.SEL_HOVER,
+            unselected_color=theme.PANEL_2,
+            unselected_hover_color=theme.HOVER)
+        self.pview_seg.set(self._pviews[0])
+        self.pview_seg.grid(row=1, column=0, sticky="ew", padx=10,
+                            pady=(0, 8))
         self.players_scroll = ctk.CTkScrollableFrame(
             col, fg_color="transparent",
             scrollbar_button_color=theme.PANEL_2,
             scrollbar_button_hover_color=theme.HOVER)
-        self.players_scroll.grid(row=1, column=0, sticky="nsew",
+        self.players_scroll.grid(row=2, column=0, sticky="nsew",
                                  padx=6, pady=(0, 10))
         self.players_scroll.grid_columnconfigure(0, weight=1)
+        getctx = lambda: ctx_for(self.proc)  # noqa: E731
+        self.bans_view = BansView(col, getctx)
+        self.ops_view = OpsView(col, getctx)
+        for v in (self.bans_view, self.ops_view):
+            v.grid(row=2, column=0, sticky="nsew", padx=6, pady=(0, 10))
+            v.grid_remove()
+
+    def _show_pview(self, value):
+        views = {self._pviews[0]: self.players_scroll,
+                 self._pviews[1]: self.bans_view,
+                 self._pviews[2]: self.ops_view}
+        for k, v in views.items():
+            if k == value:
+                v.grid()
+            else:
+                v.grid_remove()
+        if value != self._pviews[0]:
+            views[value].refresh()
 
     # ============================================================ liste
     def refresh(self):
@@ -323,6 +358,7 @@ class ServersTab(ctk.CTkFrame):
         self._update_stats()
         self._show_ip()
         self._refresh_players()
+        self._show_pview(self.pview_seg.get())
 
     def _refresh_info(self):
         m = self.proc.meta
@@ -346,30 +382,48 @@ class ServersTab(ctk.CTkFrame):
             c.destroy()
         self._ip_chips.clear()
         if not self.meta:
+            self.ip_hint.configure(text="")
             return
         m = self.proc.meta
         ip = local_ip()
         port = m.get("port", 25565)
-        playit = playit_address(Path(self.meta["dir"]))
+        tunnels = m.get("tunnels") or []
+        java_tn = next((tn for tn in tunnels if tn["proto"] == "tcp"
+                        and tn["local"] == port), None)
+        bedrock_tn = (next((tn for tn in tunnels if tn["proto"] == "udp"
+                            and tn["local"] == BEDROCK_PORT), None)
+                      if m.get("crossplay") else None)
+        legacy = (playit_address(Path(self.meta["dir"]))
+                  if not tunnels else None)
+        net_addr = (java_tn or {}).get("address") or legacy
         chips = [("Java", f"{ip}:{port}")]
-        pub = playit or self._pub_ip
-        if pub:
-            chips.append((t("ip_public_short"),
-                          pub if playit else f"{pub}:{port}"))
-        else:
-            chips.append((t("ip_public_short"), "…"))
         if m.get("crossplay"):
             chips.append(("Bedrock", f"{ip}:{BEDROCK_PORT}"))
-        for label, value in chips:
+        if net_addr:
+            chips.append((t("ip_internet"), net_addr))
+        elif self._pub_ip:
+            chips.append((t("ip_public_short"), f"{self._pub_ip}:{port}"))
+        else:
+            chips.append((t("ip_public_short"), "…"))
+        if bedrock_tn:
+            chips.append((t("ip_bedrock_net"), bedrock_tn["address"]))
+        for tn in tunnels:
+            if tn is java_tn or tn is bedrock_tn:
+                continue
+            chips.append((f"Playit · {tn['name']}", tn["address"]))
+        for i, (label, value) in enumerate(chips):
             b = ctk.CTkButton(
                 self.ip_row, text=f"{label}   {value}", height=26,
                 corner_radius=13, font=(theme.FONT_MONO, 11),
                 fg_color=theme.PANEL_2, hover_color=theme.HOVER,
                 text_color=theme.TEXT, width=0)
             b.configure(command=lambda v=value, w=b: self._copy(v, w))
-            b.pack(side="left", padx=4)
+            b.grid(row=i // 3, column=i % 3, sticky="w", padx=4, pady=2)
             self._ip_chips.append(b)
-        if not pub and self._pub_ip is None:
+        self.ip_hint.configure(
+            text=t("ip_hint_ok") if net_addr
+            else t("ip_hint_wan", port=port))
+        if not net_addr and not self._pub_ip and self._pub_ip is None:
             self._pub_ip = ""
 
             def _fetch():             # thread : pas de Tk
@@ -607,6 +661,9 @@ class ServersTab(ctk.CTkFrame):
             fn(proc, *args)
             proc.log(f"> {fn.__name__} {' '.join(str(a) for a in args)}")
 
+        menu.add_command(label="🗺 " + t("pm_card"),
+                         command=lambda: PlayerCard(self, proc, name))
+        menu.add_separator()
         menu.add_command(label=t("pm_msg"), command=lambda: _ask(
             self, t("pm_title"), t("pm_to", name=name),
             lambda m: act(pl.message, name, m)))

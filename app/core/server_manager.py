@@ -11,6 +11,7 @@ from pathlib import Path
 
 from ..config import SERVERS_DIR
 from . import crossplay, downloader, java as java_mod, mods as mods_mod
+from . import tunnels as tunnels_mod
 from .properties import write_server_properties
 
 META_FILE = "servercraft.json"
@@ -163,17 +164,12 @@ def create_server(options: dict, progress_cb=None, log=print) -> dict:
 
         # 6) Playit.gg
         summary = ""
-        playit = options.get("playit") or {}
-        if playit.get("address"):
-            log("— Configuration Playit.gg —")
-            summary = mods_mod.configure_playit(
-                path, loader,
-                address=playit["address"],
-                tcp_port=int(playit.get("tcp_port") or 25565),
-                udp_port=int(playit.get("udp_port") or 0),
-                local_server_port=options.get("port", 25565),
-                voice_enabled=(voice != "none"),
-            )
+        tunnel_list = tunnels_mod.clean(options.get("tunnels"))
+        if tunnel_list:
+            log(f"— Playit.gg : {len(tunnel_list)} tunnel(s) —")
+            summary = tunnels_mod.apply(path, loader, tunnel_list,
+                                        java_port=options.get("port", 25565),
+                                        voice=voice)
             log("PLAYIT-README.txt généré.")
 
         # 7) dossiers de contenu selon le loader (mods/, plugins/)
@@ -192,6 +188,7 @@ def create_server(options: dict, progress_cb=None, log=print) -> dict:
             "online_mode": bool(options.get("online_mode", False)),
             "accounts": accounts,
             "crossplay": crossplay_on,
+            "tunnels": tunnel_list,
             "voice": voice,
             "jar": meta_jar,
             "launch_args": launch_args,

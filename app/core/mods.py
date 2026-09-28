@@ -287,7 +287,7 @@ def install_curseforge(mod_id: int, server_dir: Path, loader: str,
     if not url:
         # Distribution restreinte : URL forgecdn reconstruite
         fid = str(f["id"])
-        url = f"{FORGECDN}/{fid[:4]}/{fid[4:]}/{f['fileName']}"
+        url = f"{FORGECDN}/{fid[:4]}/{int(fid[4:])}/{f['fileName']}"
     dest = target_dir(server_dir, loader, kind) / f["fileName"]
     return download_file(url, dest, progress_cb)
 
@@ -349,7 +349,7 @@ def curseforge_version_list(mod_id: int, loader: str, mc_version: str,
         url = f.get("downloadUrl")
         if not url:
             fid = str(f["id"])
-            url = f"{FORGECDN}/{fid[:4]}/{fid[4:]}/{f['fileName']}"
+            url = f"{FORGECDN}/{fid[:4]}/{int(fid[4:])}/{f['fileName']}"
         out.append({
             "name": f["displayName"],
             "title": f["fileName"],

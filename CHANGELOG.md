@@ -1,5 +1,41 @@
 # Versions — ServerCraft Agent
 
+## v0.5.5 — Release (2026-09-28)
+
+**Fiche joueur « Carte & inventaire »** (menu ⋯ d'un joueur → 🗺)
+- **Mini-carte** : rendu top-down des vrais chunks du monde autour du joueur
+  (lecture directe des régions .mca, aucun plugin), marqueur rouge +
+  flèche du regard, zoom 1/2/4 chunks
+- **Coordonnées exactes** : X/Y/Z + monde (Surface/Nether/End), vie, faim,
+  XP, mode de jeu — en direct via `data get` si le joueur est en ligne,
+  sinon dernière position enregistrée
+- **Inventaire** : les 41 cases (armure, main gauche, inventaire, barre)
+  + **Ender chest** ; donner un objet (catalogue filtrable), retirer une
+  case, tout vider. En ligne → commandes `item replace`/`give`/`clear` ;
+  hors ligne → écriture directe du `playerdata` NBT
+
+**Tunnels Playit.gg multiples**
+- 3 lignes par défaut (Java, Bedrock, Voice Chat) + « ＋ Ajouter » illimité,
+  dans le créateur **et** dans ⚙ Config
+- L'adresse du tunnel Java devient la puce **« Internet »** du tableau de
+  bord (celle à donner aux amis) ; l'IP de la box n'apparaît plus qu'avec
+  l'explication qu'elle nécessite d'ouvrir le port — Playit reste la
+  solution simple
+- `PLAYIT-README.txt` régénéré avec tous les tunnels ; `voice_host` de
+  Simple Voice Chat renseigné automatiquement si un tunnel UDP pointe
+  vers le port vocal
+
+**Bannis & Opérateurs (hors ligne)**
+- Vues « Bannis » et « Opérateurs » dans l'onglet joueurs et la fenêtre
+  serveur : liste des bannis (raison, date, source, IP), **OP avant
+  déban**, déban/OP/deop **même serveur arrêté** (édition directe de
+  `banned-players.json`, `banned-ips.json`, `ops.json`)
+
+**Import de modpack** : `.mrpack` (Modrinth), `.zip` CurseForge et dossiers
+d'instances Prism/ATLauncher en plus des zip de jars — tri client/serveur
+par hash SHA1 → Modrinth, métadonnées internes et liste de mods client
+connus ; installation depuis la fenêtre de résultat
+
 ## v0.5.0 — Release (2026-09-29)
 
 **Nouvelle interface**

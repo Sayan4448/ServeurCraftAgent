@@ -9,9 +9,11 @@ import customtkinter as ctk
 
 from ..core import crossplay
 from ..core import server_manager as sm
+from ..core import tunnels as tunnels_mod
 from ..core.properties import load_properties, update_properties
 from ..i18n import t
 from . import theme
+from .tunnels_editor import TunnelsEditor
 from .uithread import ui_call
 
 _ENTRY = dict(fg_color=theme.PANEL_2, border_color=theme.BORDER,
@@ -125,6 +127,13 @@ class ServerSettings(ctk.CTkToplevel):
             font=(theme.FONT, 10), text_color=theme.MUTED, wraplength=540,
             justify="left", anchor="w").pack(fill="x", padx=12, pady=(2, 10))
         self._acc_hint_update()
+
+        # ------------------------------------------------ tunnels Playit
+        self._section(scroll, t("tn_section"))
+        tbox = ctk.CTkFrame(scroll, fg_color=theme.PANEL, corner_radius=8)
+        tbox.pack(fill="x", padx=4, pady=3)
+        self.tunnels_editor = TunnelsEditor(tbox, meta.get("tunnels") or [])
+        self.tunnels_editor.pack(fill="x", padx=10, pady=(10, 10))
 
         # -------------------------------------------------------- gameplay
         self._section(scroll, t("ss_gameplay"))
@@ -272,7 +281,11 @@ class ServerSettings(ctk.CTkToplevel):
             self.meta["port"] = 25565
         want_cp = bool(self.cp_switch.get())
         self.meta["crossplay"] = want_cp
+        self.meta["tunnels"] = self.tunnels_editor.get()
         self._write_meta()
+        tunnels_mod.apply(self.dir, self.meta.get("loader", ""),
+                          self.meta["tunnels"], java_port=self.meta["port"],
+                          voice=self.meta.get("voice", "none"))
 
         # voice chat
         if self.vc_path:
