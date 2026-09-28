@@ -6,7 +6,8 @@ __pycache__/
 venv/
 
 # Données locales de l'app
-data/settings.json          # contient la clé API Gemini
+# contient la clé API — ne jamais committer
+data/settings.json
 servers/
 runtimes/
 *.jar

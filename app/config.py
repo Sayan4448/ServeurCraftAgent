@@ -25,8 +25,28 @@ SETTINGS_FILE = DATA_DIR / "settings.json"
 DEFAULT_SETTINGS = {
     "curseforge_api_key": "",           # console.curseforge.com (gratuit)
     "java_path": "",                    # vide = détection/auto-téléchargement
-    "language": "fr",                   # "fr" | "en"
+    "language": "fr",                   # fr | en | ru | ja | es | de
+    "theme": "dark",                    # "dark" | "light"
     "server_interface": True,           # fenêtre d'administration au lancement
+    "ai_beta": False,                   # onglet « Agent IA » (early access)
+    # — paramètres de l'Agent IA (bêta) —
+    "ai_provider": "gemini",
+    "gemini_api_key": "",
+    "gemini_model": "gemini-2.5-flash",
+    "anthropic_api_key": "",
+    "anthropic_model": "claude-sonnet-4-5",
+    "openai_api_key": "",
+    "openai_base": "https://api.openai.com/v1",
+    "openai_model": "gpt-4o-mini",
+    "ollama_url": "http://localhost:11434",
+    "ollama_model": "llama3.1",
+    "lmstudio_url": "http://localhost:1234/v1",
+    "lmstudio_model": "",
+    "custom_base": "",
+    "custom_key": "",
+    "custom_model": "",
+    "auto_mod_enabled": False,
+    "auto_mod_rules": "Aucune insulte, aucun spam, respect entre joueurs.",
 }
 
 

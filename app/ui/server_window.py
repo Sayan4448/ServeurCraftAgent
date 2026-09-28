@@ -67,17 +67,33 @@ class ServerWindow(ctk.CTkToplevel):
         # ------------------------------------------------------------- haut
         head = ctk.CTkFrame(self, fg_color=theme.PANEL, corner_radius=10)
         head.grid(row=0, column=0, columnspan=2, sticky="ew", padx=10, pady=10)
+        self._loader = loader
         self.status_lbl = ctk.CTkLabel(
-            head, text=f"●  {name}  ·  {loader}  ·  MC {meta.get('mc_version')}",
-            font=(theme.FONT, 14, "bold"), text_color=theme.GREEN)
+            head, text="", font=(theme.FONT, 14, "bold"))
         self.status_lbl.pack(side="left", padx=14, pady=10)
         btn = dict(fg_color=theme.PANEL_2, hover_color=theme.HOVER,
                    text_color=theme.TEXT, height=30, width=110)
+        ctk.CTkButton(head, text=t("srv_settings"),
+                      command=self._open_settings, **btn).pack(
+            side="right", padx=4)
         ctk.CTkButton(head, text=t("srv_restart"), command=self._restart,
-                      **btn).pack(side="right", padx=(4, 12))
-        ctk.CTkButton(head, text=t("srv_stop"), fg_color=theme.RED,
-                      hover_color="#b91c1c", height=30, width=110,
-                      command=self._stop).pack(side="right", padx=4)
+                      **btn).pack(side="right", padx=4)
+        self.stop_btn = ctk.CTkButton(
+            head, text=t("srv_stop"), fg_color=theme.RED,
+            hover_color="#b91c1c", height=30, width=110,
+            command=self._stop)
+        self.stop_btn.pack(side="right", padx=4)
+        self.start_btn = ctk.CTkButton(
+            head, text=t("srv_start"), fg_color=theme.GREEN,
+            hover_color="#16a34a", height=30, width=110,
+            text_color="#06210f", command=self._start)
+
+        # ligne IP (locale + publique/tunnel)
+        self.ip_lbl = ctk.CTkLabel(head, text="", font=(theme.FONT_MONO, 11),
+                                   text_color=theme.MUTED)
+        self.ip_lbl.pack(side="right", padx=12)
+        self._pub_ip = None
+        self._show_ip()
 
         # ----------------------------------------------------------- console
         left = ctk.CTkFrame(self, fg_color=theme.PANEL, corner_radius=10)
@@ -89,8 +105,8 @@ class ServerWindow(ctk.CTkToplevel):
                      text_color=theme.TEXT).grid(
             row=0, column=0, sticky="w", padx=12, pady=(10, 4))
         self.console = ctk.CTkTextbox(
-            left, font=(theme.FONT_MONO, 12), fg_color="#0a0d12",
-            text_color="#c9d1d9", wrap="word", state="disabled")
+            left, font=(theme.FONT_MONO, 12), fg_color=theme.CONSOLE_BG,
+            text_color=theme.CONSOLE_TEXT, wrap="word", state="disabled")
         self.console.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 6))
         self.console.tag_config("err", foreground="#f87171")
         self.console.tag_config("warn", foreground="#fbbf24")
@@ -126,8 +142,69 @@ class ServerWindow(ctk.CTkToplevel):
         self._redraw_console()
         self._render_players()
         self._poll_list()
+        self._tick()
+
+    # ------------------------------------------------------------ statut/IP
+
+    def _tick(self):
+        """Synchronise le statut (lancé/arrêté) et les boutons."""
+        running = self.proc.is_running()
+        if running:
+            self.status_lbl.configure(
+                text=f"●  {self.name}  ·  {self._loader}  ·  "
+                     f"MC {self.proc.meta.get('mc_version')}",
+                text_color=theme.GREEN)
+            self.stop_btn.pack(side="right", padx=4)
+            self.start_btn.pack_forget()
+        else:
+            self.status_lbl.configure(
+                text=f"○  {self.name}  ·  {t('win_offline')}",
+                text_color=theme.MUTED)
+            self.stop_btn.pack_forget()
+            self.start_btn.pack(side="right", padx=4)
+        try:
+            self.after(1500, self._tick)
+        except RuntimeError:
+            pass
+
+    def _show_ip(self):
+        from ..core.server_net import local_ip, public_ip, playit_address
+        port = self.proc.meta.get("port", 25565)
+        playit = playit_address(self.dir)
+        if playit:
+            self.ip_lbl.configure(
+                text=f"{t('ip_local', ip=local_ip(), port=port)}    "
+                     f"{t('ip_public', ip=playit)}")
+            return
+        if self._pub_ip:
+            self.ip_lbl.configure(
+                text=f"{t('ip_local', ip=local_ip(), port=port)}    "
+                     f"{t('ip_public', ip=self._pub_ip)}")
+            return
+        self.ip_lbl.configure(
+            text=f"{t('ip_local', ip=local_ip(), port=port)}    "
+                 f"{t('ip_public_wait')}")
+
+        def _fetch():
+            pub = public_ip()
+            if pub:
+                self._pub_ip = pub
+                try:
+                    self.after(0, self._show_ip)
+                except RuntimeError:
+                    pass
+        threading.Thread(target=_fetch, daemon=True).start()
+
+    def _start(self):
         if not self.proc.is_running():
-            self._mark_offline()
+            self.proc.start()
+
+    def _open_settings(self):
+        from .server_settings import ServerSettings
+        meta = dict(self.proc.meta)
+        meta["dir"] = str(self.dir)
+        meta["name"] = self.name
+        ServerSettings(self, meta)
 
     # ------------------------------------------------------------ console
 
@@ -187,9 +264,6 @@ class ServerWindow(ctk.CTkToplevel):
         self.proc.restart()
 
     def _mark_offline(self):
-        self.status_lbl.configure(
-            text=f"○  {self.name}  ·  {t('win_offline')}",
-            text_color=theme.MUTED)
         tracker = self._trackers.get(self.name)
         if tracker:
             tracker.players.clear()
@@ -311,12 +385,12 @@ class ServerWindow(ctk.CTkToplevel):
             command=lambda: self._player_message(name))
         menu.add_command(
             label=t("kick"),
-            command=lambda: act(pl.kick, name, "Expulsé par l'admin",
-                                ok=f"kick {name}"))
+            command=lambda: self._ask_reason(
+                name, t("kick_reason", name=name), pl.kick))
         menu.add_command(
             label=t("ban"),
-            command=lambda: act(pl.ban, name, "Banni par l'admin",
-                                ok=f"ban {name}"))
+            command=lambda: self._ask_reason(
+                name, t("ban_reason", name=name), pl.ban))
         menu.add_command(
             label=t("unban"),
             command=lambda: act(pl.pardon, name, ok=f"pardon {name}"))
@@ -354,6 +428,13 @@ class ServerWindow(ctk.CTkToplevel):
         if rank is not None:
             ranks_mod.set_rank(self.dir, name, rank.strip())
             self._render_players()
+
+    def _ask_reason(self, name, prompt, fn):
+        dlg = ctk.CTkInputDialog(text=prompt, title=t("reason_title"))
+        reason = dlg.get_input()
+        if reason is not None:
+            fn(self.proc, name, reason or "")
+            self._append(f"{fn.__name__} {name} {reason}", "warn")
 
     def _player_message(self, name):
         dlg = ctk.CTkInputDialog(text=t("pm_to", name=name),

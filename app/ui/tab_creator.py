@@ -157,8 +157,8 @@ class CreatorTab(ctk.CTkFrame):
         self.progress.set(0)
         self.progress.grid(row=1, column=0, sticky="ew", padx=14, pady=4)
         self.logbox = ctk.CTkTextbox(
-            right, font=(theme.FONT_MONO, 11), fg_color="#0a0d12",
-            text_color="#c9d1d9", state="disabled", wrap="word")
+            right, font=(theme.FONT_MONO, 11), fg_color=theme.CONSOLE_BG,
+            text_color=theme.CONSOLE_TEXT, state="disabled", wrap="word")
         self.logbox.grid(row=2, column=0, sticky="nsew", padx=14, pady=(4, 14))
 
         self._load_versions()
@@ -200,7 +200,10 @@ class CreatorTab(ctk.CTkFrame):
                 self._log(f"Erreur versions {loader} : {e}")
                 versions = []
             self._versions_cache[loader] = versions
-            self.after(0, self._set_versions, versions)
+            try:
+                self.after(0, self._set_versions, versions)
+            except RuntimeError:
+                pass  # fenêtre détruite pendant le chargement
 
         threading.Thread(target=work, daemon=True).start()
 

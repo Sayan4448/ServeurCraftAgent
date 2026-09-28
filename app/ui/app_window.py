@@ -3,6 +3,7 @@ import sys
 from pathlib import Path
 
 import customtkinter as ctk
+from tkinter import messagebox
 
 from ..config import load_settings, save_settings
 from ..i18n import LANGS, t
@@ -61,6 +62,13 @@ class App(ctk.CTk):
         )
         self.creator_tab.pack(fill="both", expand=True)
 
+        # Onglet Agent IA — bêta, activé dans les Paramètres
+        if load_settings().get("ai_beta"):
+            from .tab_ai import AiTab
+            self.tabview.add(t("tab_ai"))
+            self.ai_tab = AiTab(self.tabview.tab(t("tab_ai")))
+            self.ai_tab.pack(fill="both", expand=True)
+
     def _set_icon(self):
         base = (Path(sys.executable).parent if getattr(sys, "frozen", False)
                 else Path(__file__).resolve().parent.parent.parent)
@@ -73,13 +81,13 @@ class App(ctk.CTk):
 
 
 class SettingsDialog(ctk.CTkToplevel):
-    """Paramètres : langue, interface serveur, clé CurseForge."""
+    """Paramètres : langue, thème, interface serveur, IA bêta, clé CurseForge."""
 
     def __init__(self, master):
         super().__init__(master)
         self.settings = load_settings()
         self.title(t("settings"))
-        self.geometry("480x330")
+        self.geometry("500x470")
         self.configure(fg_color=theme.BG)
         self.transient(master)
         self.grab_set()
@@ -91,7 +99,7 @@ class SettingsDialog(ctk.CTkToplevel):
                      font=(theme.FONT, 15, "bold"),
                      text_color=theme.TEXT).pack(anchor="w", padx=14, pady=(14, 8))
 
-        # langue
+        # langue + thème
         row = ctk.CTkFrame(card, fg_color="transparent")
         row.pack(fill="x", padx=14, pady=6)
         ctk.CTkLabel(row, text=t("language"), width=140, anchor="w",
@@ -102,6 +110,21 @@ class SettingsDialog(ctk.CTkToplevel):
             button_hover_color=theme.ACCENT_HOVER, text_color=theme.TEXT)
         self.lang_menu.set(LANGS.get(self.settings.get("language"), "Français"))
         self.lang_menu.pack(side="left")
+
+        row = ctk.CTkFrame(card, fg_color="transparent")
+        row.pack(fill="x", padx=14, pady=6)
+        ctk.CTkLabel(row, text=t("theme"), width=140, anchor="w",
+                     text_color=theme.MUTED).pack(side="left")
+        self.theme_seg = ctk.CTkSegmentedButton(
+            row, values=[t("theme_dark"), t("theme_light")],
+            selected_color=theme.ACCENT,
+            selected_hover_color=theme.ACCENT_HOVER,
+            unselected_color=theme.PANEL_2,
+            unselected_hover_color=theme.HOVER)
+        self.theme_seg.set(
+            t("theme_light") if self.settings.get("theme") == "light"
+            else t("theme_dark"))
+        self.theme_seg.pack(side="left")
         ctk.CTkLabel(card, text=t("restart_hint"), font=(theme.FONT, 10),
                      text_color=theme.MUTED).pack(anchor="w", padx=14)
 
@@ -116,8 +139,22 @@ class SettingsDialog(ctk.CTkToplevel):
         self.iface_switch.pack(side="left")
         ctk.CTkLabel(card, text=t("server_interface_hint"),
                      font=(theme.FONT, 10), text_color=theme.MUTED,
-                     wraplength=430, justify="left").pack(
+                     wraplength=440, justify="left").pack(
             anchor="w", padx=14, pady=(0, 8))
+
+        # agent IA (bêta)
+        row = ctk.CTkFrame(card, fg_color="transparent")
+        row.pack(fill="x", padx=14, pady=6)
+        self.ai_switch = ctk.CTkSwitch(
+            row, text=t("ai_beta"), text_color=theme.TEXT,
+            progress_color=theme.ORANGE,
+            command=self._ai_toggled)
+        if self.settings.get("ai_beta"):
+            self.ai_switch.select()
+        self.ai_switch.pack(side="left")
+        ctk.CTkLabel(card, text=t("ai_beta_hint"), font=(theme.FONT, 10),
+                     text_color=theme.MUTED, wraplength=440,
+                     justify="left").pack(anchor="w", padx=14, pady=(0, 8))
 
         # clé curseforge
         row = ctk.CTkFrame(card, fg_color="transparent")
@@ -125,25 +162,33 @@ class SettingsDialog(ctk.CTkToplevel):
         ctk.CTkLabel(row, text=t("cf_key_label"), width=140, anchor="w",
                      text_color=theme.MUTED).pack(side="left")
         self.cf_entry = ctk.CTkEntry(
-            row, width=230, show="•", placeholder_text="x-api-key",
+            row, width=250, show="•", placeholder_text="x-api-key",
             fg_color=theme.PANEL_2, border_color=theme.BORDER,
             text_color=theme.TEXT)
         self.cf_entry.insert(0, self.settings.get("curseforge_api_key", ""))
         self.cf_entry.pack(side="left")
         ctk.CTkLabel(card, text=t("cf_key_hint"), font=(theme.FONT, 10),
-                     text_color=theme.MUTED, wraplength=430,
+                     text_color=theme.MUTED, wraplength=440,
                      justify="left").pack(anchor="w", padx=14, pady=(0, 8))
 
         ctk.CTkButton(card, text=t("save_close"), width=140,
                       fg_color=theme.ACCENT, hover_color=theme.ACCENT_HOVER,
                       command=self._save).pack(pady=10)
 
+    def _ai_toggled(self):
+        if self.ai_switch.get():
+            messagebox.showwarning(
+                t("ai_beta_warn_t"), t("ai_beta_warn"), parent=self)
+
     def _save(self):
         label = self.lang_menu.get()
         for code, name in LANGS.items():
             if name == label:
                 self.settings["language"] = code
+        self.settings["theme"] = ("light" if self.theme_seg.get()
+                                  == t("theme_light") else "dark")
         self.settings["server_interface"] = bool(self.iface_switch.get())
+        self.settings["ai_beta"] = bool(self.ai_switch.get())
         self.settings["curseforge_api_key"] = self.cf_entry.get().strip()
         save_settings(self.settings)
         self.destroy()

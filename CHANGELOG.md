@@ -1,5 +1,41 @@
 # Versions — ServerCraft Agent
 
+## v0.20.0 — Release (2026-09-29)
+
+**Statut et adresses**
+- Indicateur « ● Lancé / ○ Arrêté » synchronisé en temps réel ; bouton rouge
+  « Arrêter » actif uniquement quand le serveur tourne
+- **IP locale** (avec port) et **IP publique** affichées au-dessus de la
+  console — adresse du tunnel Playit détectée automatiquement
+
+**Configuration du serveur (nouvelle fenêtre ⚙ Config)**
+- RAM, port, nombre de joueurs max, MOTD, difficulté, gamemode, PvP,
+  command blocks, whitelist, nether, monstres, vol, distances de
+  vue/simulation, protection du spawn, hardcore
+- Choix du mode de comptes : « Premium uniquement » (`online-mode=true`) ou
+  « Premium + crack » (`online-mode=false`)
+- Propriété libre `clé=valeur` pour toute autre option de `server.properties`
+- Section **Simple Voice Chat** : port UDP et `voice_host` quand le mod est
+  installé
+- Fenêtre de config aussi accessible depuis l'interface serveur
+
+**Joueurs en ligne**
+- Kick et ban avec **saisie de la raison**, op/deop, MP, gamemode, kill,
+  unban — dans l'onglet comme dans la fenêtre serveur
+
+**Interface**
+- **Thème clair / sombre** (⚙ Paramètres, appliqué au redémarrage)
+- 6 langues : Français, English, Русский, 日本語, Español, Deutsch
+- Corrections visuelles : couleurs de console dynamiques, callbacks
+  thread→UI protégés, boutons synchronisés
+
+**Agent IA — bêta (early access)**
+- Option dans ⚙ Paramètres, **désactivée par défaut**, avec avertissement à
+  l'activation. Ajoute l'onglet « Agent IA (Bêta) » : installation de
+  mods/plugins, recherche Modrinth, construction de structures en jeu
+  (prison, maison, tour…), gestion de fichiers — providers : Gemini,
+  Anthropic, OpenAI, Ollama, LM Studio, compatible OpenAI.
+
 ## v0.10.0 — Release (2026-09-28)
 
 **Suppression de toutes les fonctionnalités IA** (agent, providers, modération

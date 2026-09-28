@@ -271,7 +271,10 @@ class ServerProcess:
     def start(self, on_line=None, on_exit=None) -> None:
         if self.is_running():
             return
-        self.on_line, self.on_exit = on_line, on_exit
+        if on_line is not None:
+            self.on_line = on_line
+        if on_exit is not None:
+            self.on_exit = on_exit
         cmd = build_launch_command(self.path, self.meta)
         self.proc = subprocess.Popen(
             cmd, cwd=str(self.path),
