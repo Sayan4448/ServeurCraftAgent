@@ -2,6 +2,21 @@
 
 ## v0.20.0 — Release (2026-09-29)
 
+**Correctifs de stabilité (boutons / lancement)**
+- La console, le statut et les joueurs ne passent plus par des appels Tkinter
+  depuis les threads (source des boutons « morts » et de la console vide) :
+  `ServerProcess` stocke la console et les joueurs, l'UI les lit toutes les
+  150 ms ; les autres threads (mods, créateur, IA) passent par une file
+  `ui_call` sûre
+- Serveur sélectionné automatiquement et surligné ; nouveau serveur
+  sélectionné après création ; plus de reconstruction de la liste pendant un clic
+- Statut « ◌ Démarrage… » pendant la préparation de Java
+- Java : la version requise est vérifiée à chaque lancement (Java 25 pour
+  Minecraft 26.x) avec téléchargement auto d'un JRE compatible
+- Plus de fenêtre console noire java.exe ; erreurs de redémarrage affichées
+- Tous les boutons : Lancer, Arrêter, Redémarrer, Mods, Config, Dossier
+- Comptes Premium / Crack / Les deux ; RAM libre en Go
+
 **Correctif** : les boutons de l'onglet « Mes Serveurs » débordaient de leur
 colonne et étaient recouverts par le panneau joueurs — « Lancer » ne répondait
 plus. Barre simplifiée à 3 boutons (« ▶ Lancer », « ■ Arrêter »,

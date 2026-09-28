@@ -11,6 +11,7 @@ from ..config import load_settings, save_settings
 from ..core import server_manager as sm
 from ..i18n import t
 from . import theme
+from .uithread import ui_call
 
 QUICK_PROMPTS = [
     "…",
@@ -234,7 +235,7 @@ class AiTab(ctk.CTkFrame):
 
         def work():
             models = providers.list_models(provider, self.settings)
-            self.after(0, self._set_models, provider, models, silent)
+            ui_call(self, self._set_models, provider, models, silent)
 
         threading.Thread(target=work, daemon=True).start()
 
@@ -285,8 +286,8 @@ class AiTab(ctk.CTkFrame):
             save_settings(self.settings)
             mod = AutonomousModerator(
                 name, self.settings, rules,
-                on_event=lambda t: self.after(
-                    0, self._add_bubble, "step", f"🤖 {t}"))
+                on_event=lambda ev: ui_call(
+                    self, self._add_bubble, "step", f"🤖 {ev}"))
             set_moderator(name, mod)
             self._add_bubble(
                 "step",
@@ -404,16 +405,16 @@ class AiTab(ctk.CTkFrame):
         def work():
             try:
                 reply = agent.run(
-                    msg, on_step=lambda ev: self.after(0, self._add_step, ev))
+                    msg, on_step=lambda ev: ui_call(self, self._add_step, ev))
             except providers.ProviderError as e:
                 reply = f"⚠ {e}"
             except Exception as e:
                 reply = f"⚠ Erreur inattendue : {e}"
-            self.after(0, self._add_bubble, "assistant", reply)
+            ui_call(self, self._add_bubble, "assistant", reply)
             summary = agent.summary()
             if summary:
-                self.after(0, self._add_bubble, "step", summary)
-            self.after(0, self._set_busy, False)
+                ui_call(self, self._add_bubble, "step", summary)
+            ui_call(self, self._set_busy, False)
 
         threading.Thread(target=work, daemon=True).start()
 
@@ -432,15 +433,15 @@ class AiTab(ctk.CTkFrame):
         def work():
             try:
                 reply = agent.analyze_logs(
-                    on_step=lambda ev: self.after(0, self._add_step, ev))
+                    on_step=lambda ev: ui_call(self, self._add_step, ev))
             except providers.ProviderError as e:
                 reply = f"⚠ {e}"
             except Exception as e:
                 reply = f"⚠ Erreur inattendue : {e}"
-            self.after(0, self._add_bubble, "assistant", reply)
+            ui_call(self, self._add_bubble, "assistant", reply)
             summary = agent.summary()
             if summary:
-                self.after(0, self._add_bubble, "step", summary)
-            self.after(0, self._set_busy, False)
+                ui_call(self, self._add_bubble, "step", summary)
+            ui_call(self, self._set_busy, False)
 
         threading.Thread(target=work, daemon=True).start()

@@ -15,6 +15,7 @@ from ..core import mods as mods_mod
 from ..core.downloader import LOADER_LABELS
 from ..i18n import t
 from . import theme
+from .uithread import ui_call
 
 PAGE_SIZE = 20
 
@@ -177,7 +178,7 @@ class ModsManager(ctk.CTkToplevel):
                 img = Image.open(BytesIO(data)).convert("RGBA")
                 cimg = ctk.CTkImage(light_image=img, dark_image=img, size=size)
                 self._icon_cache[url] = cimg
-                self.after(0, lambda: label.configure(image=cimg, text=""))
+                ui_call(self, lambda: label.configure(image=cimg, text=""))
             except Exception:
                 pass
 
@@ -212,9 +213,9 @@ class ModsManager(ctk.CTkToplevel):
                     res = mods_mod.search_modrinth(
                         query, self.meta["loader"], self.meta["mc_version"],
                         kind, limit=PAGE_SIZE, offset=offset)
-                self.after(0, self._show_results, res)
+                ui_call(self, self._show_results, res)
             except Exception as e:
-                self.after(0, self._set_status, t("mods_error", e=e))
+                ui_call(self, self._set_status, t("mods_error", e=e))
             finally:
                 self._busy = False
 
@@ -293,16 +294,16 @@ class ModsManager(ctk.CTkToplevel):
                 path = mods_mod.install_result(
                     result, self.server_dir, self.meta["loader"],
                     self.meta["mc_version"], api_key=api_key)
-                self.after(0, lambda: self._set_status(
+                ui_call(self, lambda: self._set_status(
                     t("mods_installed_in", file=path.name,
                       dir=path.parent.name)))
-                self.after(0, self._refresh_installed)
-                self.after(0, lambda: btn.configure(
+                ui_call(self, self._refresh_installed)
+                ui_call(self, lambda: btn.configure(
                     text=t("mods_installed_btn")))
             except Exception as e:
-                self.after(0, lambda: self._set_status(
+                ui_call(self, lambda: self._set_status(
                     t("mods_error", e=f"{result['title']} : {e}")))
-                self.after(0, lambda: btn.configure(
+                ui_call(self, lambda: btn.configure(
                     state="normal", text=t("mods_install")))
             finally:
                 self._busy = False
@@ -321,14 +322,14 @@ class ModsManager(ctk.CTkToplevel):
                 path = mods_mod.download_to(
                     version["url"], version["filename"], self.server_dir,
                     self.meta["loader"], result["kind"])
-                self.after(0, lambda: self._set_status(
+                ui_call(self, lambda: self._set_status(
                     t("mods_installed_in", file=path.name,
                       dir=path.parent.name)))
-                self.after(0, self._refresh_installed)
-                self.after(0, lambda: btn.configure(text="✔"))
+                ui_call(self, self._refresh_installed)
+                ui_call(self, lambda: btn.configure(text="✔"))
             except Exception as e:
-                self.after(0, lambda: self._set_status(t("mods_error", e=e)))
-                self.after(0, lambda: btn.configure(
+                ui_call(self, lambda: self._set_status(t("mods_error", e=e)))
+                ui_call(self, lambda: btn.configure(
                     state="normal", text=t("mods_install")))
             finally:
                 self._busy = False
@@ -386,7 +387,7 @@ class ModsManager(ctk.CTkToplevel):
             result = (modpack.analyze(jars) if jars else
                       {"server": [], "client": [], "unknown": []})
             try:
-                self.after(0, self._show_modpack_result, result)
+                ui_call(self, self._show_modpack_result, result)
             except RuntimeError:
                 pass
         threading.Thread(target=work, daemon=True).start()
@@ -566,10 +567,10 @@ class ModDetailDialog(ctk.CTkToplevel):
                     self.result, self.manager.meta["loader"],
                     self.manager.meta["mc_version"], api_key)
             except Exception as e:
-                self.after(0, lambda: self.vstatus.configure(
+                ui_call(self, lambda: self.vstatus.configure(
                     text=t("mods_error", e=e)))
                 versions = []
-            self.after(0, self._populate, details, versions)
+            ui_call(self, self._populate, details, versions)
 
         threading.Thread(target=work, daemon=True).start()
 
@@ -632,7 +633,7 @@ class ModDetailDialog(ctk.CTkToplevel):
                 cimg = ctk.CTkImage(light_image=img, dark_image=img,
                                     size=img.size)
                 self._gallery_imgs.append(cimg)  # garde la référence
-                self.after(0, lambda: holder.configure(
+                ui_call(self, lambda: holder.configure(
                     image=cimg, text="", cursor="hand2"))
                 holder.bind("<Button-1>",
                             lambda e, u=url: webbrowser.open(u))

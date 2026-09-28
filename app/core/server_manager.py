@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import threading
 import time
+from collections import deque
 from pathlib import Path
 
 from ..config import SERVERS_DIR
@@ -14,6 +15,8 @@ from .properties import write_server_properties
 
 META_FILE = "servercraft.json"
 STOP_TIMEOUT = 30
+# pas de fenêtre console noire pour java.exe quand l'app est packagée (GUI)
+NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 
 class ServerError(Exception):
@@ -192,7 +195,7 @@ def _run_installer(java: Path, installer: Path, cwd: Path, log) -> None:
     proc = subprocess.Popen(
         [str(java), "-jar", installer.name, "--installServer"],
         cwd=str(cwd), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        text=True, errors="replace",
+        text=True, errors="replace", creationflags=NO_WINDOW,
     )
     for line in proc.stdout:
         line = line.strip()
@@ -229,10 +232,9 @@ def _find_forge_jar(path: Path) -> str:
 PROCESSES: dict = {}
 
 
-def build_launch_command(path: Path, meta: dict) -> list:
-    java, _ = java_mod.find_java()
-    if not java:
-        java = java_mod.ensure_java(meta["mc_version"])
+def build_launch_command(path: Path, meta: dict, log=print) -> list:
+    # ensure_java vérifie la version requise et télécharge un JRE si besoin
+    java = java_mod.ensure_java(meta["mc_version"], log=log)
     ram = int(meta.get("ram_mb", 4096))
     if meta.get("launch_args"):
         # Réplique run.bat : java @user_jvm_args.txt @.../win_args.txt nogui
@@ -250,17 +252,48 @@ def build_launch_command(path: Path, meta: dict) -> list:
 
 
 class ServerProcess:
-    """Encapsule le process Java : lecture console + envoi de commandes."""
+    """Encapsule le process Java : lecture console + envoi de commandes.
+
+    La console (`backlog` + compteur `seq`) et les joueurs (`tracker`) sont
+    stockés ici : l'UI les lit périodiquement depuis le thread principal —
+    aucun appel Tkinter n'est fait depuis les threads de lecture.
+    """
 
     def __init__(self, name: str):
+        from .players import PlayerTracker
         self.name = name
         self.path = server_dir(name)
         self.meta = load_meta(self.path)
         self.proc = None
         self.on_line = None
         self.on_exit = None
-        self.listeners = []          # callbacks (name, line) -> joueurs/autonomie
+        self.listeners = []          # callbacks (name, line) -> autonomie IA
         self.exit_listeners = []     # callbacks (name, code)
+        self.backlog = deque(maxlen=5000)
+        self.seq = 0                 # nb total de lignes ajoutées
+        self.tracker = PlayerTracker(name)
+        self.exit_code = None
+        self._starting = False       # démarrage en cours (Java, Popen…)
+        self._lock = threading.Lock()
+
+    def log(self, line: str) -> None:
+        """Ajoute une ligne à la console (thread-safe)."""
+        with self._lock:
+            self.backlog.append(line)
+            self.seq += 1
+
+    def lines_since(self, seen: int):
+        """Retourne (nouvelles lignes, nouveau compteur)."""
+        with self._lock:
+            n = min(self.seq - seen, len(self.backlog))
+            new = list(self.backlog)[-n:] if n > 0 else []
+            return new, self.seq
+
+    def reload_meta(self) -> None:
+        try:
+            self.meta = load_meta(self.path)
+        except (OSError, json.JSONDecodeError):
+            pass
 
     def add_listener(self, on_line=None, on_exit=None) -> None:
         if on_line:
@@ -278,36 +311,47 @@ class ServerProcess:
             self.on_line = on_line
         if on_exit is not None:
             self.on_exit = on_exit
-        cmd = build_launch_command(self.path, self.meta)
+        self.reload_meta()           # RAM/port modifiés dans ⚙ Config
+        self.exit_code = None
+        self.tracker.players.clear()
+        cmd = build_launch_command(self.path, self.meta, log=self.log)
         self.proc = subprocess.Popen(
             cmd, cwd=str(self.path),
             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT, text=True, errors="replace",
-            bufsize=1,
+            encoding="utf-8", bufsize=1,
+            creationflags=NO_WINDOW,
         )
-        threading.Thread(target=self._reader, daemon=True).start()
-        threading.Thread(target=self._waiter, daemon=True).start()
+        threading.Thread(target=self._reader, args=(self.proc,),
+                         daemon=True).start()
+        threading.Thread(target=self._waiter, args=(self.proc,),
+                         daemon=True).start()
 
-    def _reader(self) -> None:
-        for line in self.proc.stdout:
-            line = line.rstrip("\n")
-            if self.on_line:
-                self.on_line(self.name, line)
-            for cb in list(self.listeners):
-                try:
-                    cb(self.name, line)
-                except Exception:
-                    pass
-
-    def _waiter(self) -> None:
-        code = self.proc.wait()
-        if self.on_exit:
-            self.on_exit(self.name, code)
-        for cb in list(self.exit_listeners):
+    def _reader(self, proc) -> None:
+        for line in proc.stdout:
+            line = line.rstrip("\r\n")
+            self.log(line)
             try:
-                cb(self.name, code)
+                self.tracker.feed(self.name, line)
             except Exception:
                 pass
+            for cb in [self.on_line, *self.listeners]:
+                if cb:
+                    try:
+                        cb(self.name, line)
+                    except Exception:
+                        pass
+
+    def _waiter(self, proc) -> None:
+        code = proc.wait()
+        self.exit_code = code
+        self.tracker.players.clear()
+        for cb in [self.on_exit, *self.exit_listeners]:
+            if cb:
+                try:
+                    cb(self.name, code)
+                except Exception:
+                    pass
 
     def send(self, command: str) -> bool:
         if not self.is_running():
@@ -333,12 +377,20 @@ class ServerProcess:
             proc.kill()
 
     def restart(self) -> None:
-        was_callbacks = (self.on_line, self.on_exit)
+        old = self.proc
         self.stop()
-        def _relauch():
-            self.proc and self.proc.wait()
-            self.start(*was_callbacks)
-        threading.Thread(target=_relauch, daemon=True).start()
+        self._starting = True
+
+        def _relaunch():
+            try:
+                if old:
+                    old.wait()
+                self.start()
+            except Exception as e:  # noqa: BLE001
+                self.log(f"✖ Redémarrage impossible : {e}")
+            finally:
+                self._starting = False
+        threading.Thread(target=_relaunch, daemon=True).start()
 
 
 def get_process(name: str) -> ServerProcess:

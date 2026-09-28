@@ -20,6 +20,8 @@ class App(ctk.CTk):
         self.minsize(1040, 660)
         self.configure(fg_color=theme.BG)
         self.after(250, self._set_icon)
+        from .uithread import install
+        install(self)
 
         header = ctk.CTkFrame(self, fg_color=theme.PANEL, corner_radius=0, height=56)
         header.pack(fill="x")
@@ -58,7 +60,8 @@ class App(ctk.CTk):
 
         self.creator_tab = CreatorTab(
             self.tabview.tab(t("tab_creator")),
-            on_created=lambda meta: self.servers_tab.refresh(),
+            on_created=lambda meta: self.servers_tab.select_by_name(
+                meta["name"]),
         )
         self.creator_tab.pack(fill="both", expand=True)
 

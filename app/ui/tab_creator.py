@@ -7,6 +7,7 @@ import customtkinter as ctk
 from ..core import downloader, mods as mods_mod, server_manager as sm
 from ..i18n import t
 from . import theme
+from .uithread import ui_call
 
 _LABEL_TO_LOADER = {v: k for k, v in downloader.LOADER_LABELS.items()}
 
@@ -171,7 +172,7 @@ class CreatorTab(ctk.CTkFrame):
             self.playit_frame.grid_remove()
 
     def _log(self, text):
-        self.after(0, self._append_log, text)
+        ui_call(self, self._append_log, text)
 
     def _append_log(self, text):
         self.logbox.configure(state="normal")
@@ -195,7 +196,7 @@ class CreatorTab(ctk.CTkFrame):
                 versions = []
             self._versions_cache[loader] = versions
             try:
-                self.after(0, self._set_versions, versions)
+                ui_call(self, self._set_versions, versions)
             except RuntimeError:
                 pass  # fenêtre détruite pendant le chargement
 
@@ -278,13 +279,13 @@ class CreatorTab(ctk.CTkFrame):
             try:
                 meta = sm.create_server(
                     options,
-                    progress_cb=lambda f: self.after(0, self.progress.set, f),
+                    progress_cb=lambda f: ui_call(self, self.progress.set, f),
                     log=self._log,
                 )
-                self.after(0, self._create_done, meta)
+                ui_call(self, self._create_done, meta)
             except Exception as e:
                 self._log(f"✖ Erreur : {e}")
-                self.after(0, self._create_failed)
+                ui_call(self, self._create_failed)
 
         threading.Thread(target=work, daemon=True).start()
 

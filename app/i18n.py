@@ -1079,6 +1079,13 @@ STRINGS = {
 }
 
 
+STRINGS["fr"]["srv_starting_short"] = "Démarrage…"
+STRINGS["en"]["srv_starting_short"] = "Starting…"
+STRINGS["ru"]["srv_starting_short"] = "Запуск…"
+STRINGS["ja"]["srv_starting_short"] = "起動中…"
+STRINGS["es"]["srv_starting_short"] = "Iniciando…"
+STRINGS["de"]["srv_starting_short"] = "Startet…"
+
 STRINGS["fr"].update({
     "ss_ram": "RAM (Go)",
     "acc_crack": "Crack uniquement",

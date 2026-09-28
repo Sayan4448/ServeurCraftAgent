@@ -1,7 +1,11 @@
-"""Fenêtre 'Interface serveur' : console live + joueurs (têtes, grades, catégories)."""
+"""Fenêtre 'Interface serveur' : console live + joueurs (têtes, grades, catégories).
+
+Toutes les données viennent de `ServerProcess` (backlog console, tracker de
+joueurs) et sont lues par `_pump()` dans le thread Tk — aucun appel Tkinter
+depuis les threads de lecture.
+"""
 import threading
 import tkinter as tk
-from collections import deque
 from io import BytesIO
 from pathlib import Path
 
@@ -13,6 +17,7 @@ from ..core import players as pl
 from ..core import ranks as ranks_mod
 from ..core import server_manager as sm
 from ..core.downloader import LOADER_LABELS
+from ..core.server_net import local_ip, playit_address, public_ip
 from ..i18n import t
 from . import theme
 
@@ -21,14 +26,13 @@ MINOTAR = "https://minotar.net/helm/{}/40.png"
 
 class ServerWindow(ctk.CTkToplevel):
     _instances = {}   # name -> fenêtre (une seule par serveur)
-    _buffers = {}     # name -> deque de lignes console
-    _trackers = {}    # name -> PlayerTracker
 
     @classmethod
     def open(cls, master, name: str):
         inst = cls._instances.get(name)
         try:
             if inst and inst.winfo_exists():
+                inst.deiconify()
                 inst.lift()
                 inst.focus_force()
                 return inst
@@ -43,22 +47,22 @@ class ServerWindow(ctk.CTkToplevel):
         self.name = name
         self.proc = sm.get_process(name)
         self.dir = Path(self.proc.path)
-        self._head_cache = {}
-        self.buffer = self._buffers.setdefault(name, deque(maxlen=4000))
-
-        tracker = self._trackers.get(name)
-        if tracker is None:
-            tracker = pl.PlayerTracker(name)
-            self._trackers[name] = tracker
-            self.proc.add_listener(on_line=tracker.feed)
-        tracker.on_change = lambda _ps, s=self: s._safe_render()
-        self.proc.add_listener(on_line=self._feed, on_exit=self._exit)
+        self._heads = {}              # pseudo -> CTkImage
+        self._pending_heads = {}      # pseudo -> Image PIL (rempli par thread)
+        self._head_labels = {}        # pseudo -> [labels]
+        self._seen = 0
+        self._last_players = None
+        self._last_running = None
+        self._alive = True
+        self._pub_ip = None
+        self._tick_n = 0
 
         meta = self.proc.meta
-        loader = LOADER_LABELS.get(meta.get("loader"), meta.get("loader", ""))
+        self._loader = LOADER_LABELS.get(meta.get("loader"),
+                                         meta.get("loader", ""))
         self.title(t("win_title", name=name))
-        self.geometry("980x640")
-        self.minsize(760, 480)
+        self.geometry("1000x660")
+        self.minsize(780, 480)
         self.configure(fg_color=theme.BG)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.grid_columnconfigure(0, weight=1)
@@ -67,33 +71,36 @@ class ServerWindow(ctk.CTkToplevel):
         # ------------------------------------------------------------- haut
         head = ctk.CTkFrame(self, fg_color=theme.PANEL, corner_radius=10)
         head.grid(row=0, column=0, columnspan=2, sticky="ew", padx=10, pady=10)
-        self._loader = loader
-        self.status_lbl = ctk.CTkLabel(
-            head, text="", font=(theme.FONT, 14, "bold"))
-        self.status_lbl.pack(side="left", padx=14, pady=10)
-        btn = dict(fg_color=theme.PANEL_2, hover_color=theme.HOVER,
-                   text_color=theme.TEXT, height=30, width=110)
-        ctk.CTkButton(head, text=t("srv_settings"),
-                      command=self._open_settings, **btn).pack(
-            side="right", padx=4)
-        ctk.CTkButton(head, text=t("srv_restart"), command=self._restart,
-                      **btn).pack(side="right", padx=4)
-        self.stop_btn = ctk.CTkButton(
-            head, text=t("srv_stop"), fg_color=theme.RED,
-            hover_color="#b91c1c", height=30, width=110,
-            command=self._stop)
-        self.stop_btn.pack(side="right", padx=4)
-        self.start_btn = ctk.CTkButton(
-            head, text=t("srv_start"), fg_color=theme.GREEN,
-            hover_color="#16a34a", height=30, width=110,
-            text_color="#06210f", command=self._start)
-
-        # ligne IP (locale + publique/tunnel)
+        head.grid_columnconfigure(0, weight=1)
+        self.status_lbl = ctk.CTkLabel(head, text="",
+                                       font=(theme.FONT, 14, "bold"),
+                                       anchor="w")
+        self.status_lbl.grid(row=0, column=0, sticky="w", padx=14,
+                             pady=(10, 0))
         self.ip_lbl = ctk.CTkLabel(head, text="", font=(theme.FONT_MONO, 11),
-                                   text_color=theme.MUTED)
-        self.ip_lbl.pack(side="right", padx=12)
-        self._pub_ip = None
-        self._show_ip()
+                                   text_color=theme.MUTED, anchor="w")
+        self.ip_lbl.grid(row=1, column=0, sticky="w", padx=14, pady=(0, 10))
+
+        btns = ctk.CTkFrame(head, fg_color="transparent")
+        btns.grid(row=0, column=1, rowspan=2, sticky="e", padx=10)
+        bstyle = dict(height=32, width=110, font=(theme.FONT, 12, "bold"))
+        self.start_btn = ctk.CTkButton(
+            btns, text=t("srv_start"), fg_color=theme.GREEN,
+            hover_color="#16a34a", text_color="#06210f",
+            command=self._start, **bstyle)
+        self.stop_btn = ctk.CTkButton(
+            btns, text=t("srv_stop"), fg_color=theme.RED,
+            hover_color="#b91c1c", command=self._stop, **bstyle)
+        self.restart_btn = ctk.CTkButton(
+            btns, text=t("srv_restart"), fg_color=theme.ORANGE,
+            hover_color="#b45309", command=self._restart, **bstyle)
+        self.settings_btn = ctk.CTkButton(
+            btns, text=t("srv_settings"), fg_color=theme.PANEL_2,
+            hover_color=theme.HOVER, text_color=theme.TEXT,
+            command=self._open_settings, **bstyle)
+        for b in (self.start_btn, self.stop_btn, self.restart_btn,
+                  self.settings_btn):
+            b.pack(side="left", padx=3, pady=8)
 
         # ----------------------------------------------------------- console
         left = ctk.CTkFrame(self, fg_color=theme.PANEL, corner_radius=10)
@@ -110,7 +117,7 @@ class ServerWindow(ctk.CTkToplevel):
         self.console.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 6))
         self.console.tag_config("err", foreground="#f87171")
         self.console.tag_config("warn", foreground="#fbbf24")
-        self.console.tag_config("ok", foreground="#4ade80")
+        self.console.tag_config("info", foreground=theme.ACCENT)
 
         cmdrow = ctk.CTkFrame(left, fg_color="transparent")
         cmdrow.grid(row=2, column=0, sticky="ew", padx=12, pady=(0, 12))
@@ -130,6 +137,7 @@ class ServerWindow(ctk.CTkToplevel):
         right.grid(row=1, column=1, sticky="ns", padx=(5, 10), pady=(0, 10))
         right.grid_propagate(False)
         right.grid_rowconfigure(1, weight=1)
+        right.grid_columnconfigure(0, weight=1)
         self.players_header = ctk.CTkLabel(
             right, text=t("players_online", n=0),
             font=(theme.FONT, 13, "bold"), text_color=theme.TEXT)
@@ -139,110 +147,95 @@ class ServerWindow(ctk.CTkToplevel):
         self.players_frame.grid(row=1, column=0, sticky="nsew", padx=6,
                                 pady=(0, 8))
 
-        self._redraw_console()
-        self._render_players()
-        self._poll_list()
-        self._tick()
+        self._show_ip()
+        self._pump()
 
-    # ------------------------------------------------------------ statut/IP
+    # ------------------------------------------------------------ boucle
 
-    def _tick(self):
-        """Synchronise le statut (lancé/arrêté) et les boutons."""
-        running = self.proc.is_running()
+    def _pump(self):
+        if not self._alive:
+            return
+        try:
+            lines, self._seen = self.proc.lines_since(self._seen)
+            if lines:
+                self._append_many(lines)
+            running = self.proc.is_running()
+            starting = getattr(self.proc, "_starting", False)
+            if (running, starting) != self._last_running:
+                self._last_running = (running, starting)
+                self._update_state(running, starting)
+            players = frozenset(self.proc.tracker.players)
+            if players != self._last_players:
+                self._last_players = players
+                self._render_players()
+            if self._pending_heads:
+                self._apply_heads()
+            self._tick_n += 1
+            if running and self._tick_n % 60 == 0:
+                self.proc.send("list")
+            if self._tick_n % 20 == 0:
+                self._show_ip()
+        except Exception:  # noqa: BLE001
+            import traceback
+            traceback.print_exc()
+        try:
+            self.after(150, self._pump)
+        except RuntimeError:
+            pass
+
+    def _update_state(self, running, starting):
         if running:
             self.status_lbl.configure(
                 text=f"●  {self.name}  ·  {self._loader}  ·  "
-                     f"MC {self.proc.meta.get('mc_version')}",
+                     f"MC {self.proc.meta.get('mc_version')}  ·  "
+                     f"{t('srv_running')}",
                 text_color=theme.GREEN)
-            self.stop_btn.pack(side="right", padx=4)
-            self.start_btn.pack_forget()
+        elif starting:
+            self.status_lbl.configure(
+                text=f"◌  {self.name}  ·  {t('srv_starting_short')}",
+                text_color=theme.ORANGE)
         else:
             self.status_lbl.configure(
-                text=f"○  {self.name}  ·  {t('win_offline')}",
+                text=f"○  {self.name}  ·  {t('srv_stopped')}",
                 text_color=theme.MUTED)
-            self.stop_btn.pack_forget()
-            self.start_btn.pack(side="right", padx=4)
-        try:
-            self.after(1500, self._tick)
-        except RuntimeError:
-            pass
+        self.start_btn.configure(
+            state="disabled" if running or starting else "normal")
+        self.stop_btn.configure(state="normal" if running else "disabled")
+        self.restart_btn.configure(state="normal" if running else "disabled")
 
     def _show_ip(self):
-        from ..core.server_net import local_ip, public_ip, playit_address
         port = self.proc.meta.get("port", 25565)
-        playit = playit_address(self.dir)
-        if playit:
-            self.ip_lbl.configure(
-                text=f"{t('ip_local', ip=local_ip(), port=port)}    "
-                     f"{t('ip_public', ip=playit)}")
-            return
-        if self._pub_ip:
-            self.ip_lbl.configure(
-                text=f"{t('ip_local', ip=local_ip(), port=port)}    "
-                     f"{t('ip_public', ip=self._pub_ip)}")
-            return
+        pub = playit_address(self.dir) or self._pub_ip
         self.ip_lbl.configure(
-            text=f"{t('ip_local', ip=local_ip(), port=port)}    "
-                 f"{t('ip_public_wait')}")
+            text=f"{t('ip_local', ip=local_ip(), port=port)}    " +
+                 (t("ip_public", ip=pub) if pub else t("ip_public_wait")))
+        if not pub and self._pub_ip is None:
+            self._pub_ip = ""
 
-        def _fetch():
-            pub = public_ip()
-            if pub:
-                self._pub_ip = pub
-                try:
-                    self.after(0, self._show_ip)
-                except RuntimeError:
-                    pass
-        threading.Thread(target=_fetch, daemon=True).start()
-
-    def _start(self):
-        if not self.proc.is_running():
-            self.proc.start()
-
-    def _open_settings(self):
-        from .server_settings import ServerSettings
-        meta = dict(self.proc.meta)
-        meta["dir"] = str(self.dir)
-        meta["name"] = self.name
-        ServerSettings(self, meta)
+            def _fetch():             # thread : pas de Tk ici
+                self._pub_ip = public_ip() or ""
+            threading.Thread(target=_fetch, daemon=True).start()
 
     # ------------------------------------------------------------ console
 
-    def _feed(self, name, line):
-        if name != self.name:
-            return
-        self.buffer.append(line)
-        try:
-            self.after(0, self._append, line)
-        except RuntimeError:
-            pass
+    @staticmethod
+    def _tag(line):
+        up = line.upper()
+        if "ERROR" in up or "EXCEPTION" in up or line.startswith("✖"):
+            return "err"
+        if "WARN" in up:
+            return "warn"
+        if line.startswith(("──", ">", "→")):
+            return "info"
+        return None
 
-    def _exit(self, name, code):
-        try:
-            self.after(0, self._mark_offline)
-            self.after(0, self._append,
-                       t("srv_proc_end", code=code), "warn")
-        except RuntimeError:
-            pass
-
-    def _append(self, line, tag=None):
-        try:
-            if tag is None:
-                up = line.upper()
-                tag = ("err" if ("ERROR" in up or "EXCEPTION" in up)
-                       else "warn" if "WARN" in up else None)
-            self.console.configure(state="normal")
-            self.console.insert("end", line + "\n", tag)
-            self.console.see("end")
-            self.console.configure(state="disabled")
-        except RuntimeError:
-            pass
-
-    def _redraw_console(self):
+    def _append_many(self, lines):
         self.console.configure(state="normal")
-        self.console.delete("1.0", "end")
-        for line in self.buffer:
-            self.console.insert("end", line + "\n")
+        for line in lines:
+            self.console.insert("end", line + "\n", self._tag(line))
+        # limite la taille pour garder l'UI fluide
+        if int(self.console.index("end-1c").split(".")[0]) > 6000:
+            self.console.delete("1.0", "1000.0")
         self.console.see("end")
         self.console.configure(state="disabled")
 
@@ -251,82 +244,88 @@ class ServerWindow(ctk.CTkToplevel):
         if not cmd:
             return
         if self.proc.send(cmd):
-            self._append(f"> {cmd}")
+            self.proc.log(f"> {cmd}")
         else:
-            self._append(t("srv_not_running"), "err")
+            self._append_many([t("srv_not_running")])
         self.cmd_entry.delete(0, "end")
 
+    def _start(self):
+        proc = self.proc
+        if proc.is_running() or getattr(proc, "_starting", False):
+            return
+        proc._starting = True
+        proc.log(t("srv_starting", name=proc.name))
+
+        def work():
+            try:
+                proc.start()
+            except Exception as e:  # noqa: BLE001
+                proc.log(f"✖ {t('srv_start_err')} : {e}")
+            finally:
+                proc._starting = False
+        threading.Thread(target=work, daemon=True).start()
+
     def _stop(self):
-        self.proc.stop()
-        self._append(t("srv_stop_req"), "warn")
+        if self.proc.is_running():
+            self.proc.log(t("srv_stop_req"))
+            self.proc.stop()
 
     def _restart(self):
-        self.proc.restart()
+        if self.proc.is_running():
+            self.proc.log(t("srv_stop_req"))
+            self.proc.restart()
 
-    def _mark_offline(self):
-        tracker = self._trackers.get(self.name)
-        if tracker:
-            tracker.players.clear()
-        self._render_players()
+    def _open_settings(self):
+        from .server_settings import ServerSettings
+        meta = dict(self.proc.meta)
+        meta["dir"] = str(self.dir)
+        meta["name"] = self.name
+        ServerSettings(self, meta)
 
     # ------------------------------------------------------------ joueurs
-
-    def _poll_list(self):
-        if self.proc.is_running():
-            self.proc.send("list")
-        try:
-            self.after(8000, self._poll_list)
-        except RuntimeError:
-            pass
-
-    def _safe_render(self):
-        try:
-            self.after(0, self._render_players)
-        except RuntimeError:
-            pass
 
     def _render_players(self):
         for w in self.players_frame.winfo_children():
             w.destroy()
-        tracker = self._trackers.get(self.name)
-        players = sorted((tracker.players if tracker else {}),
-                         key=str.lower)
+        self._head_labels.clear()
+        players = sorted(self.proc.tracker.players, key=str.lower)
         self.players_header.configure(
             text=t("players_online", n=len(players)))
+        if not players:
+            ctk.CTkLabel(self.players_frame, text=t("no_players"),
+                         text_color=theme.MUTED,
+                         font=(theme.FONT, 11)).pack(pady=12)
+            return
         data = ranks_mod.load(self.dir)
         ops = ranks_mod.read_ops(self.dir)
         admins = [p for p in players
                   if p in ops or ranks_mod.get(data, p)["category"]
                   == ranks_mod.CAT_ADMIN]
         regular = [p for p in players if p not in admins]
-        if not players:
-            ctk.CTkLabel(self.players_frame, text=t("no_players"),
-                         text_color=theme.MUTED,
-                         font=(theme.FONT, 11)).pack(pady=12)
-            return
-        self._group(t("cat_admins"), admins, theme.ORANGE)
-        self._group(t("cat_players"), regular, theme.TEXT)
+        self._group(t("cat_admins"), admins, theme.ORANGE, data)
+        self._group(t("cat_players"), regular, theme.TEXT, data)
 
-    def _group(self, title, players, color):
+    def _group(self, title, players, color, data):
         if not players:
             return
         ctk.CTkLabel(self.players_frame, text=title,
                      font=(theme.FONT, 11, "bold"), text_color=color,
                      anchor="w").pack(fill="x", padx=4, pady=(8, 2))
         for p in players:
-            self._player_row(p)
+            self._player_row(p, data)
 
-    def _player_row(self, name):
-        data = ranks_mod.load(self.dir)
+    def _player_row(self, name, data):
         entry = ranks_mod.get(data, name)
         row = ctk.CTkFrame(self.players_frame, fg_color=theme.PANEL_2,
                            corner_radius=8)
         row.pack(fill="x", pady=2, padx=2)
         face = ctk.CTkLabel(row, text=name[:2].upper(), width=40, height=40,
                             fg_color=theme.PANEL, corner_radius=6,
-                            font=(theme.FONT, 12, "bold"))
+                            font=(theme.FONT, 12, "bold"),
+                            text_color=theme.TEXT)
         face.pack(side="left", padx=6, pady=6)
-        self._load_head(name, face)
+        self._head_labels.setdefault(name, []).append(face)
+        self._load_head(name)
         info = ctk.CTkFrame(row, fg_color="transparent")
         info.pack(side="left", fill="x", expand=True, padx=4)
         ctk.CTkLabel(info, text=name, font=(theme.FONT, 12, "bold"),
@@ -336,74 +335,73 @@ class ServerWindow(ctk.CTkToplevel):
             else theme.MUTED
         ctk.CTkLabel(info, text=rank, font=(theme.FONT, 10),
                      text_color=rcolor, anchor="w").pack(anchor="w")
-        btn = ctk.CTkButton(row, text="⋯", width=28, height=26,
-                            fg_color=theme.PANEL, hover_color=theme.HOVER)
+        btn = ctk.CTkButton(row, text="⋯", width=30, height=28,
+                            fg_color=theme.PANEL, hover_color=theme.HOVER,
+                            text_color=theme.TEXT)
         btn.configure(command=lambda b=btn, n=name: self._player_menu(n, b))
         btn.pack(side="right", padx=6)
 
-    def _load_head(self, name, label):
-        if name in self._head_cache:
-            label.configure(image=self._head_cache[name], text="")
+    def _load_head(self, name):
+        if name in self._heads:
+            for lbl in self._head_labels.get(name, []):
+                lbl.configure(image=self._heads[name], text="")
+            return
+        if name in self._pending_heads:
             return
 
-        def work():
+        def work():                   # thread : télécharge seulement
             try:
                 data = requests.get(MINOTAR.format(name), timeout=10).content
-                img = Image.open(BytesIO(data)).convert("RGBA")
-                cimg = ctk.CTkImage(light_image=img, dark_image=img,
-                                    size=(40, 40))
-                self._head_cache[name] = cimg
-                self.after(0, lambda: label.configure(image=cimg, text=""))
-            except Exception:
+                self._pending_heads[name] = Image.open(
+                    BytesIO(data)).convert("RGBA")
+            except Exception:  # noqa: BLE001
                 pass
-
         threading.Thread(target=work, daemon=True).start()
+
+    def _apply_heads(self):
+        for name, img in list(self._pending_heads.items()):
+            if img is None:
+                continue
+            self._heads[name] = ctk.CTkImage(light_image=img, dark_image=img,
+                                             size=(40, 40))
+            self._pending_heads[name] = None
+            for lbl in self._head_labels.get(name, []):
+                try:
+                    lbl.configure(image=self._heads[name], text="")
+                except tk.TclError:
+                    pass
 
     def _player_menu(self, name, widget):
         menu = tk.Menu(self, tearoff=0, bg=theme.PANEL_2, fg=theme.TEXT,
                        activebackground=theme.ACCENT,
                        activeforeground="#ffffff")
 
-        def act(fn, *args, ok=None):
+        def act(fn, *args):
             fn(self.proc, *args)
-            if ok:
-                self._append(ok, "warn")
+            self.proc.log(f"> {fn.__name__} {name} {' '.join(args[1:])}")
 
-        menu.add_command(
-            label=t("set_rank"),
-            command=lambda: self._set_rank(name))
+        menu.add_command(label=t("set_rank"),
+                         command=lambda: self._set_rank(name))
         menu.add_separator()
-        menu.add_command(
-            label=t("op"),
-            command=lambda: self._set_admin(name, True))
-        menu.add_command(
-            label=t("deop"),
-            command=lambda: self._set_admin(name, False))
+        menu.add_command(label=t("op"),
+                         command=lambda: self._set_admin(name, True))
+        menu.add_command(label=t("deop"),
+                         command=lambda: self._set_admin(name, False))
         menu.add_separator()
-        menu.add_command(
-            label=t("pm_msg"),
-            command=lambda: self._player_message(name))
-        menu.add_command(
-            label=t("kick"),
-            command=lambda: self._ask_reason(
-                name, t("kick_reason", name=name), pl.kick))
-        menu.add_command(
-            label=t("ban"),
-            command=lambda: self._ask_reason(
-                name, t("ban_reason", name=name), pl.ban))
-        menu.add_command(
-            label=t("unban"),
-            command=lambda: act(pl.pardon, name, ok=f"pardon {name}"))
+        menu.add_command(label=t("pm_msg"),
+                         command=lambda: self._player_message(name))
+        menu.add_command(label=t("kick"), command=lambda: self._ask_reason(
+            name, t("kick_reason", name=name), pl.kick))
+        menu.add_command(label=t("ban"), command=lambda: self._ask_reason(
+            name, t("ban_reason", name=name), pl.ban))
+        menu.add_command(label=t("unban"),
+                         command=lambda: act(pl.pardon, name))
         menu.add_separator()
         for mode in ("survival", "creative", "adventure", "spectator"):
-            menu.add_command(
-                label=t("gamemode", mode=mode),
-                command=lambda m=mode: act(pl.gamemode, name, m,
-                                           ok=f"gamemode {m} {name}"))
+            menu.add_command(label=t("gamemode", mode=mode),
+                             command=lambda m=mode: act(pl.gamemode, name, m))
         menu.add_separator()
-        menu.add_command(
-            label=t("kill"),
-            command=lambda: act(pl.kill, name, ok=f"kill {name}"))
+        menu.add_command(label=t("kill"), command=lambda: act(pl.kill, name))
         try:
             menu.tk_popup(widget.winfo_rootx(),
                           widget.winfo_rooty() + widget.winfo_height())
@@ -411,14 +409,11 @@ class ServerWindow(ctk.CTkToplevel):
             menu.grab_release()
 
     def _set_admin(self, name, admin: bool):
-        if admin:
-            self.proc.send(f"op {name}")
-            ranks_mod.set_category(self.dir, name, ranks_mod.CAT_ADMIN)
-            self._append(f"op {name}", "warn")
-        else:
-            self.proc.send(f"deop {name}")
-            ranks_mod.set_category(self.dir, name, ranks_mod.CAT_PLAYER)
-            self._append(f"deop {name}", "warn")
+        self.proc.send(f"{'op' if admin else 'deop'} {name}")
+        ranks_mod.set_category(
+            self.dir, name,
+            ranks_mod.CAT_ADMIN if admin else ranks_mod.CAT_PLAYER)
+        self.proc.log(f"> {'op' if admin else 'deop'} {name}")
         self._render_players()
 
     def _set_rank(self, name):
@@ -433,8 +428,8 @@ class ServerWindow(ctk.CTkToplevel):
         dlg = ctk.CTkInputDialog(text=prompt, title=t("reason_title"))
         reason = dlg.get_input()
         if reason is not None:
-            fn(self.proc, name, reason or "")
-            self._append(f"{fn.__name__} {name} {reason}", "warn")
+            fn(self.proc, name, reason.strip() or fn.__name__)
+            self.proc.log(f"> {fn.__name__} {name} {reason}")
 
     def _player_message(self, name):
         dlg = ctk.CTkInputDialog(text=t("pm_to", name=name),
@@ -442,11 +437,9 @@ class ServerWindow(ctk.CTkToplevel):
         text = dlg.get_input()
         if text:
             pl.message(self.proc, name, text)
-            self._append(f"→ {name} : {text}")
+            self.proc.log(f"→ {name} : {text}")
 
     def _on_close(self):
-        tracker = self._trackers.get(self.name)
-        if tracker:
-            tracker.on_change = None
+        self._alive = False
         self._instances.pop(self.name, None)
         self.destroy()

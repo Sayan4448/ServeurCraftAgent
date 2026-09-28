@@ -80,6 +80,8 @@ def required_java_major(mc_version: str) -> int:
         parts = [int(p) for p in mc_version.split(".")[:2]]
     except ValueError:
         return 21
+    if parts[0] >= 26:          # nouveau schéma Mojang (26.1+) : Java 25
+        return 25
     if parts[0] != 1 or len(parts) < 2:
         return 21
     minor = parts[1]

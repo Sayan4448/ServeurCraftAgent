@@ -2,7 +2,6 @@
 import subprocess
 import threading
 import tkinter as tk
-from collections import deque
 from pathlib import Path
 from tkinter import messagebox
 
@@ -39,16 +38,26 @@ class ServersTab(ctk.CTkFrame):
 
         self.meta: dict | None = None
         self.proc: sm.ServerProcess | None = None
-        self.buffer = deque(maxlen=4000)
-        self._wired_trackers: set[str] = set()
+        self._seen = 0                 # lignes console déjà affichées
+        self._last_players = None
+        self._last_running = None
+        self._cards: dict[str, ctk.CTkFrame] = {}
+        self._dots: dict[str, list] = {}     # nom -> [label, état affiché]
         self._pub_ip: str | None = None
+        self._ip_dirty = False
+        self._list_tick = 0
 
         self._build_list_col()
         self._build_console_col()
         self._build_players_col()
 
         self.refresh()
-        self._poll()
+        metas = sm.list_servers()
+        if metas:
+            self._select(metas[0])
+        else:
+            self._update_state()
+        self._pump()
 
     # ------------------------------------------------------------ colonnes
     def _build_list_col(self):
@@ -164,143 +173,155 @@ class ServersTab(ctk.CTkFrame):
     def refresh(self):
         for w in self.list_scroll.winfo_children():
             w.destroy()
+        self._cards.clear()
+        self._dots.clear()
         metas = sm.list_servers()
         if not metas:
             ctk.CTkLabel(self.list_scroll, text=t("srv_empty"),
                          text_color=theme.MUTED, justify="left").grid(
                 row=0, column=0, sticky="w", padx=4, pady=4)
             return
+        sel = self.meta["name"] if self.meta else None
         for i, meta in enumerate(metas):
-            card = ctk.CTkFrame(self.list_scroll, fg_color=theme.PANEL_2,
-                                corner_radius=8)
+            selected = meta["name"] == sel
+            card = ctk.CTkFrame(
+                self.list_scroll, corner_radius=8, border_width=2,
+                fg_color=theme.HOVER if selected else theme.PANEL_2,
+                border_color=theme.ACCENT if selected else theme.PANEL_2)
             card.grid(row=i, column=0, sticky="ew", pady=3)
             card.grid_columnconfigure(0, weight=1)
-            card.bind("<Button-1>", lambda _e, m=meta: self._select(m))
+            self._cards[meta["name"]] = card
             lbl = ctk.CTkLabel(card, text=meta["name"],
                                font=(theme.FONT, 12, "bold"),
                                text_color=theme.TEXT, anchor="w")
             lbl.grid(row=0, column=0, sticky="w", padx=8, pady=(6, 0))
-            lbl.bind("<Button-1>", lambda _e, m=meta: self._select(m))
-            dot = "●" if meta.get("running") else "○"
-            dot_color = theme.GREEN if meta.get("running") else theme.MUTED
-            state = ctk.CTkLabel(card, text=dot, text_color=dot_color,
-                                 font=(theme.FONT, 12))
+            running = meta.get("running")
+            state = ctk.CTkLabel(
+                card, text="●" if running else "○",
+                text_color=theme.GREEN if running else theme.MUTED,
+                font=(theme.FONT, 12))
             state.grid(row=0, column=1, padx=(0, 8))
+            self._dots[meta["name"]] = [state, bool(running)]
             sub = ctk.CTkLabel(
                 card,
                 text=f"{meta['loader']} · MC {meta['mc_version']}",
                 font=(theme.FONT, 10), text_color=theme.MUTED, anchor="w")
             sub.grid(row=1, column=0, columnspan=2, sticky="w", padx=8,
                      pady=(0, 6))
-            sub.bind("<Button-1>", lambda _e, m=meta: self._select(m))
+            # clic n'importe où sur la carte (frame + labels + canvas interne)
+            for w in (card, lbl, state, sub, *card.winfo_children()):
+                w.bind("<Button-1>", lambda _e, m=meta: self._select(m))
 
     # ------------------------------------------------------------ sélection
+    def select_by_name(self, name: str):
+        self.refresh()
+        for meta in sm.list_servers():
+            if meta["name"] == name:
+                self._select(meta)
+                return
+
     def _select(self, meta: dict):
         self.meta = meta
         self.proc = sm.get_process(meta["name"])
-        # tracker partagé avec ServerWindow (alimenté via listener)
-        trackers = ServerWindow._trackers
-        tr = trackers.get(meta["name"])
-        if tr is None:
-            tr = pl.PlayerTracker(meta["name"])
-            trackers[meta["name"]] = tr
-        if meta["name"] not in self._wired_trackers:
-            self.proc.add_listener(on_line=tr.feed)
-            self._wired_trackers.add(meta["name"])
-        tr.on_change = lambda _ps, s=self: s.after(0, s._refresh_players)
+        self.proc.reload_meta()
+        for name, card in self._cards.items():
+            sel = name == meta["name"]
+            card.configure(fg_color=theme.HOVER if sel else theme.PANEL_2,
+                           border_color=theme.ACCENT if sel
+                           else theme.PANEL_2)
         self.sel_label.configure(text=meta["name"])
+        m = self.proc.meta
         self.info_label.configure(
-            text=f"{meta['loader']} {meta['mc_version']} · port "
-                 f"{meta['port']} · {meta['ram_mb']} Mo")
+            text=f"{m['loader']} {m['mc_version']} · port {m['port']} · "
+                 f"{round(int(m['ram_mb']) / 1024, 1):g} Go")
+        # console : on rejoue l'historique du serveur sélectionné
+        self.console.configure(state="normal")
+        self.console.delete("1.0", "end")
+        self.console.configure(state="disabled")
+        lines, self._seen = self.proc.lines_since(0)
+        for line in lines:
+            self._append(line)
+        self._last_players = None
+        self._last_running = None
         self._update_state()
         self._show_ip()
         self._refresh_players()
 
     def _tracker(self):
-        if not self.meta:
-            return None
-        return ServerWindow._trackers.get(self.meta["name"])
+        return self.proc.tracker if self.proc else None
 
     # ------------------------------------------------------------------- IP
     def _show_ip(self):
         if not self.meta:
             return
         ip = local_ip()
-        port = self.meta.get("port", 25565)
+        port = (self.proc.meta if self.proc else self.meta).get("port", 25565)
         playit = playit_address(Path(self.meta["dir"]))
-        if playit:
-            self.ip_label.configure(
-                text=f"{t('ip_local', ip=ip, port=port)}    "
-                     f"{t('ip_public', ip=playit)}")
-            return
-        if self._pub_ip:
-            self.ip_label.configure(
-                text=f"{t('ip_local', ip=ip, port=port)}    "
-                     f"{t('ip_public', ip=self._pub_ip)}")
-            return
+        pub = playit or self._pub_ip
         self.ip_label.configure(
-            text=f"{t('ip_local', ip=ip, port=port)}    "
-                 f"{t('ip_public_wait')}")
+            text=f"{t('ip_local', ip=ip, port=port)}    " +
+                 (t('ip_public', ip=pub) if pub else t('ip_public_wait')))
+        if not pub and self._pub_ip is None:
+            self._pub_ip = ""          # une seule requête en cours
 
-        def _fetch():
-            pub = public_ip()
-            if pub:
-                self._pub_ip = pub
-                try:
-                    self.after(0, self._show_ip)
-                except RuntimeError:
-                    pass
-        threading.Thread(target=_fetch, daemon=True).start()
+            def _fetch():             # thread : ne touche pas à Tk
+                self._pub_ip = public_ip() or ""
+                self._ip_dirty = True
+            threading.Thread(target=_fetch, daemon=True).start()
 
     # -------------------------------------------------------------- actions
     def _update_state(self):
+        running = bool(self.proc and self.proc.is_running())
+        starting = bool(self.proc and getattr(self.proc, "_starting", False))
         if not self.proc:
-            return
-        running = self.proc.is_running()
-        self.state_label.configure(
-            text=("● " + t("srv_running")) if running
-            else ("○ " + t("srv_stopped")),
-            text_color=theme.GREEN if running else theme.MUTED)
+            self.state_label.configure(text="")
+        elif starting and not running:
+            self.state_label.configure(text="◌ " + t("srv_starting_short"),
+                                       text_color=theme.ORANGE)
+        else:
+            self.state_label.configure(
+                text=("● " + t("srv_running")) if running
+                else ("○ " + t("srv_stopped")),
+                text_color=theme.GREEN if running else theme.MUTED)
+        has = self.proc is not None
         self._btns["srv_start"].configure(
-            state="disabled" if running else "normal")
+            state="normal" if has and not running and not starting
+            else "disabled")
         self._btns["srv_stop"].configure(
             state="normal" if running else "disabled")
         self._btns["srv_restart"].configure(
             state="normal" if running else "disabled")
+        for k in ("srv_mods", "srv_settings", "srv_folder"):
+            self._btns[k].configure(state="normal" if has else "disabled")
 
     def _start(self):
-        if not self.proc or self.proc.is_running():
+        proc = self.proc
+        if not proc or proc.is_running() or getattr(proc, "_starting", False):
             return
-        self._append(t("srv_starting", name=self.meta["name"]), "info")
-        self._btns["srv_start"].configure(state="disabled")
+        proc._starting = True
+        proc.log(t("srv_starting", name=proc.name))
+        self._update_state()
 
-        def work():
+        def work():                   # thread : Java peut être téléchargé
             try:
-                self.proc.start(on_line=self._on_console_line,
-                                on_exit=self._on_exit)
+                proc.start()
             except Exception as e:  # noqa: BLE001
-                try:
-                    self.after(0, self._append,
-                               f"{t('srv_start_err')} : {e}", "err")
-                except RuntimeError:
-                    pass
-            try:
-                self.after(0, self._update_state)
-            except RuntimeError:
-                pass
+                proc.log(f"✖ {t('srv_start_err')} : {e}")
+            finally:
+                proc._starting = False
         threading.Thread(target=work, daemon=True).start()
         if load_settings().get("server_interface", True):
-            ServerWindow.open(self, self.meta["name"])
+            ServerWindow.open(self, proc.name)
 
     def _stop(self):
         if self.proc and self.proc.is_running():
-            self._append(t("srv_stop_req"), "warn")
+            self.proc.log(t("srv_stop_req"))
             self.proc.stop()
         self._update_state()
 
     def _restart(self):
         if self.proc and self.proc.is_running():
-            self._append(t("srv_stop_req"), "warn")
+            self.proc.log(t("srv_stop_req"))
             self.proc.restart()
         self._update_state()
 
@@ -312,7 +333,7 @@ class ServersTab(ctk.CTkFrame):
         if not self.proc or not self.proc.send(cmd):
             self._append(t("srv_not_running"), "err")
             return
-        self._append(f"> {cmd}")
+        self.proc.log(f"> {cmd}")
 
     def _open_mods(self):
         if self.meta:
@@ -348,19 +369,13 @@ class ServersTab(ctk.CTkFrame):
         self._refresh_players()
 
     # -------------------------------------------------------------- console
-    def _on_console_line(self, name: str, line: str):
-        if self.meta and name == self.meta["name"]:
-            self.buffer.append(line)
-            try:
-                self.after(0, self._append, line)
-            except RuntimeError:
-                pass
-
     def _append(self, line: str, tag: str | None = None):
         if tag is None:
             up = line.upper()
-            tag = ("err" if ("ERROR" in up or "EXCEPTION" in up)
-                   else "warn" if "WARN" in up else None)
+            tag = ("err" if ("ERROR" in up or "EXCEPTION" in up
+                             or line.startswith("✖"))
+                   else "warn" if "WARN" in up
+                   else "info" if line.startswith(("──", ">")) else None)
         colors = {"err": "#f87171", "warn": "#fbbf24", "info": theme.ACCENT,
                   "ok": "#4ade80"}
         tag = tag or "def"
@@ -371,20 +386,6 @@ class ServersTab(ctk.CTkFrame):
         self.console.insert("end", line + "\n", tag)
         self.console.see("end")
         self.console.configure(state="disabled")
-
-    def _on_exit(self, name: str, code: int):
-        if self.meta and name == self.meta["name"]:
-            try:
-                self.after(0, self._append,
-                           t("srv_proc_end", code=code), "warn")
-                self.after(0, self._update_state)
-                self.after(0, self.refresh)
-                self.after(0, self._refresh_players)
-            except RuntimeError:
-                pass
-            tr = self._tracker()
-            if tr:
-                tr.reset()
 
     # -------------------------------------------------------------- joueurs
     def _refresh_players(self):
@@ -452,15 +453,44 @@ class ServersTab(ctk.CTkFrame):
             menu.grab_release()
 
     # ---------------------------------------------------------------- boucle
-    def _poll(self):
+    def _pump(self):
+        """Toutes les 150 ms, depuis le thread Tk : console, statut, joueurs."""
         try:
-            if self.proc and self.proc.is_running():
-                tr = self._tracker()
-                if tr is not None and not tr.players:
+            if self.proc:
+                lines, self._seen = self.proc.lines_since(self._seen)
+                for line in lines:
+                    self._append(line)
+                running = self.proc.is_running()
+                if running != self._last_running:
+                    if self._last_running and not running:
+                        self._append(t("srv_proc_end",
+                                       code=self.proc.exit_code), "warn")
+                    self._last_running = running
+                self._update_state()
+                players = frozenset(self.proc.tracker.players)
+                if players != self._last_players:
+                    self._last_players = players
+                    self._refresh_players()
+                self._list_tick += 1
+                if running and self._list_tick % 60 == 0:   # ~9 s
                     self.proc.send("list")
-            self._update_state()
+            # pastilles ●/○ mises à jour en place (sans recréer la liste)
+            for name, slot in self._dots.items():
+                p = sm.PROCESSES.get(name)
+                on = bool(p and p.is_running())
+                if on != slot[1]:
+                    slot[1] = on
+                    slot[0].configure(text="●" if on else "○",
+                                      text_color=theme.GREEN if on
+                                      else theme.MUTED)
+            if self._ip_dirty:
+                self._ip_dirty = False
+                self._show_ip()
+        except Exception:  # noqa: BLE001 — la boucle ne doit jamais mourir
+            import traceback
+            traceback.print_exc()
         finally:
             try:
-                self.after(2000, self._poll)
+                self.after(150, self._pump)
             except RuntimeError:
                 pass
