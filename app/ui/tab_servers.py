@@ -1,4 +1,8 @@
-"""Onglet « Mes Serveurs » : liste / console / joueurs."""
+"""Onglet « Mes Serveurs » : liste · tableau de bord · console · joueurs.
+
+Règle : aucun appel Tk depuis un thread. Console, joueurs et statut sont lus
+dans `ServerProcess` par `_pump()` (toutes les 150 ms, thread Tk).
+"""
 import subprocess
 import threading
 import tkinter as tk
@@ -10,14 +14,18 @@ import customtkinter as ctk
 from ..config import load_settings
 from ..core import players as pl
 from ..core import server_manager as sm
-from ..core.server_net import local_ip, public_ip, playit_address
+from ..core.crossplay import BEDROCK_PORT
+from ..core.downloader import LOADER_LABELS
+from ..core.properties import load_properties
+from ..core.server_net import local_ip, playit_address, public_ip
 from ..i18n import t
 from . import theme
 from .mods_manager import ModsManager
 from .server_settings import ServerSettings
 from .server_window import ServerWindow
 
-BTN = dict(height=34, font=(theme.FONT, 12), corner_radius=8)
+_TAG_COLORS = {"err": ("#dc2626", "#f87171"), "warn": ("#b45309", "#fbbf24"),
+               "info": theme.ACCENT}
 
 
 def _ask(win, title, prompt, cb):
@@ -28,27 +36,70 @@ def _ask(win, title, prompt, cb):
         cb(val)
 
 
+def _sys_ram():
+    try:
+        import psutil
+        vm = psutil.virtual_memory()
+        return vm.used / 1024 ** 3, vm.total / 1024 ** 3
+    except Exception:  # noqa: BLE001
+        return None
+
+
+class StatCard(ctk.CTkFrame):
+    """Petite carte : titre, valeur, barre de progression, sous-texte."""
+
+    def __init__(self, master, title, color):
+        super().__init__(master, fg_color=theme.PANEL, corner_radius=12,
+                         border_width=1, border_color=theme.BORDER)
+        self.color = color
+        ctk.CTkLabel(self, text=title, font=(theme.FONT, 11),
+                     text_color=theme.MUTED, anchor="w").pack(
+            fill="x", padx=12, pady=(10, 0))
+        self.value = ctk.CTkLabel(self, text="—", font=(theme.FONT, 18, "bold"),
+                                  text_color=theme.TEXT, anchor="w")
+        self.value.pack(fill="x", padx=12)
+        self.bar = ctk.CTkProgressBar(self, height=6, corner_radius=3,
+                                      progress_color=color,
+                                      fg_color=theme.PANEL_2)
+        self.bar.set(0)
+        self.bar.pack(fill="x", padx=12, pady=(4, 2))
+        self.sub = ctk.CTkLabel(self, text=" ", font=(theme.FONT, 10),
+                                text_color=theme.MUTED, anchor="w")
+        self.sub.pack(fill="x", padx=12, pady=(0, 8))
+
+    def set(self, value, frac=None, sub=" ", warn=False):
+        self.value.configure(text=value)
+        if frac is not None:
+            self.bar.set(max(0.0, min(1.0, frac)))
+            self.bar.configure(progress_color=theme.RED if warn
+                               else self.color)
+        self.sub.configure(text=sub)
+
+
 class ServersTab(ctk.CTkFrame):
-    def __init__(self, master):
+    def __init__(self, master, on_new=None):
         super().__init__(master, fg_color="transparent")
+        self.on_new = on_new
         self.grid_columnconfigure(0, weight=0, minsize=230)
         self.grid_columnconfigure(1, weight=1)
-        self.grid_columnconfigure(2, weight=0, minsize=210)
+        self.grid_columnconfigure(2, weight=0, minsize=230)
         self.grid_rowconfigure(0, weight=1)
 
         self.meta: dict | None = None
         self.proc: sm.ServerProcess | None = None
-        self._seen = 0                 # lignes console déjà affichées
+        self._seen = 0
         self._last_players = None
         self._last_running = None
+        self._last_ui_state = None
         self._cards: dict[str, ctk.CTkFrame] = {}
-        self._dots: dict[str, list] = {}     # nom -> [label, état affiché]
+        self._dots: dict[str, list] = {}
         self._pub_ip: str | None = None
         self._ip_dirty = False
-        self._list_tick = 0
+        self._tick = 0
+        self._max_players = 20
 
         self._build_list_col()
-        self._build_console_col()
+        self._build_main_col()
         self._build_players_col()
 
         self.refresh()
@@ -59,117 +110,149 @@ class ServersTab(ctk.CTkFrame):
             self._update_state()
         self._pump()
 
-    # ------------------------------------------------------------ colonnes
+    # ============================================================ layout
     def _build_list_col(self):
-        col = ctk.CTkFrame(self, fg_color=theme.PANEL, corner_radius=10)
-        col.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+        col = theme.card(self)
+        col.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
         col.grid_rowconfigure(1, weight=1)
         col.grid_columnconfigure(0, weight=1)
 
-        ctk.CTkLabel(col, text=t("srv_my"), font=(theme.FONT, 13, "bold"),
-                     text_color=theme.TEXT).grid(
-            row=0, column=0, sticky="w", padx=12, pady=(10, 4))
+        head = ctk.CTkFrame(col, fg_color="transparent")
+        head.grid(row=0, column=0, sticky="ew", padx=12, pady=(12, 6))
+        ctk.CTkLabel(head, text=t("srv_my"), font=(theme.FONT, 14, "bold"),
+                     text_color=theme.TEXT).pack(side="left")
+        ctk.CTkButton(head, text="＋", width=32, height=28,
+                      font=(theme.FONT, 14, "bold"), fg_color=theme.ACCENT,
+                      hover_color=theme.ACCENT_HOVER,
+                      command=lambda: self.on_new and self.on_new()).pack(
+            side="right")
 
-        self.list_scroll = ctk.CTkScrollableFrame(col, fg_color=theme.BG)
-        self.list_scroll.grid(row=1, column=0, sticky="nsew",
-                              padx=8, pady=(0, 8))
+        self.list_scroll = ctk.CTkScrollableFrame(
+            col, fg_color="transparent",
+            scrollbar_button_color=theme.PANEL_2,
+            scrollbar_button_hover_color=theme.HOVER)
+        self.list_scroll.grid(row=1, column=0, sticky="nsew", padx=6)
         self.list_scroll.grid_columnconfigure(0, weight=1)
 
-        ctk.CTkButton(col, text=t("srv_delete"), fg_color=theme.RED,
-                      hover_color="#b91c1c", command=self._delete,
-                      **BTN).grid(row=2, column=0, sticky="ew", padx=10,
-                                  pady=(0, 10))
+        ctk.CTkButton(col, text="🗑  " + t("srv_delete"), height=32,
+                      fg_color="transparent", border_width=1,
+                      border_color=theme.RED, text_color=theme.RED,
+                      hover_color=theme.PANEL_2, font=(theme.FONT, 12),
+                      command=self._delete).grid(
+            row=2, column=0, sticky="ew", padx=12, pady=12)
 
-    def _build_console_col(self):
-        col = ctk.CTkFrame(self, fg_color=theme.PANEL, corner_radius=10)
-        col.grid(row=0, column=1, sticky="nsew", padx=(0, 8))
-        col.grid_rowconfigure(4, weight=1)
+    def _build_main_col(self):
+        col = ctk.CTkFrame(self, fg_color="transparent")
+        col.grid(row=0, column=1, sticky="nsew", padx=(0, 10))
         col.grid_columnconfigure(0, weight=1)
-        col.grid_columnconfigure(1, weight=0)
+        col.grid_rowconfigure(3, weight=1)
 
+        # ---------------------------------------------------- en-tête
+        head = theme.card(col)
+        head.grid(row=0, column=0, sticky="ew")
+        head.grid_columnconfigure(0, weight=1)
+        top = ctk.CTkFrame(head, fg_color="transparent")
+        top.grid(row=0, column=0, sticky="ew", padx=16, pady=(14, 0))
         self.sel_label = ctk.CTkLabel(
-            col, text=t("srv_none_sel"), font=(theme.FONT, 15, "bold"),
+            top, text=t("srv_none_sel"), font=(theme.FONT, 20, "bold"),
             text_color=theme.TEXT, anchor="w")
-        self.sel_label.grid(row=0, column=0, sticky="w", padx=12, pady=(10, 0))
-        self.state_label = ctk.CTkLabel(
-            col, text="", font=(theme.FONT, 12, "bold"))
-        self.state_label.grid(row=0, column=1, sticky="e", padx=10,
-                              pady=(10, 0))
-
-        # ligne IP
-        self.ip_label = ctk.CTkLabel(col, text="", font=(theme.FONT_MONO, 11),
-                                     text_color=theme.MUTED, anchor="w")
-        self.ip_label.grid(row=1, column=0, columnspan=2, sticky="w",
-                           padx=14, pady=(2, 0))
-
-        self.info_label = ctk.CTkLabel(col, text="", font=(theme.FONT, 11),
+        self.sel_label.pack(side="left")
+        self.state_pill = ctk.CTkLabel(
+            top, text="", font=(theme.FONT, 11, "bold"), corner_radius=10,
+            fg_color=theme.PANEL_2, text_color=theme.MUTED, height=24)
+        self.state_pill.pack(side="left", padx=12)
+        self.info_label = ctk.CTkLabel(head, text="", font=(theme.FONT, 12),
                                        text_color=theme.MUTED, anchor="w")
-        self.info_label.grid(row=2, column=0, columnspan=2, sticky="w",
-                             padx=14, pady=2)
+        self.info_label.grid(row=1, column=0, sticky="w", padx=16)
 
-        # boutons d'action sur leurs propres lignes — jamais masqués
-        btnrow = ctk.CTkFrame(col, fg_color="transparent")
-        btnrow.grid(row=3, column=0, columnspan=2, sticky="ew", padx=10,
-                    pady=(4, 2))
-        for r in (0, 1):
-            btnrow.grid_rowconfigure(r, weight=0)
-        btnrow.grid_columnconfigure((0, 1, 2), weight=1, uniform="b")
+        self.ip_row = ctk.CTkFrame(head, fg_color="transparent")
+        self.ip_row.grid(row=2, column=0, sticky="w", padx=12, pady=(6, 12))
+        self._ip_chips: list[ctk.CTkButton] = []
+
+        # ---------------------------------------------------- stats
+        stats = ctk.CTkFrame(col, fg_color="transparent")
+        stats.grid(row=1, column=0, sticky="ew", pady=10)
+        stats.grid_columnconfigure((0, 1, 2, 3), weight=1, uniform="s")
+        self.st_ram = StatCard(stats, t("stat_ram"), theme.ACCENT)
+        self.st_cpu = StatCard(stats, t("stat_cpu"), theme.PURPLE)
+        self.st_players = StatCard(stats, t("stat_players"), theme.GREEN)
+        self.st_uptime = StatCard(stats, t("stat_uptime"), theme.ORANGE)
+        for i, w in enumerate((self.st_ram, self.st_cpu, self.st_players,
+                               self.st_uptime)):
+            w.grid(row=0, column=i, sticky="nsew",
+                   padx=(0 if i == 0 else 5, 0 if i == 3 else 5))
+
+        # ---------------------------------------------------- actions
+        acts = ctk.CTkFrame(col, fg_color="transparent")
+        acts.grid(row=2, column=0, sticky="ew", pady=(0, 10))
+        acts.grid_columnconfigure((0, 1, 2, 3, 4, 5), weight=1, uniform="b")
         self._btns = {}
-
-        def _btn(key, cmd, color, row, col_, text_color=None):
-            b = ctk.CTkButton(
-                btnrow, text=t(key), command=cmd, fg_color=color,
-                hover_color=theme.HOVER if color == theme.PANEL_2 else None,
-                text_color=text_color or theme.TEXT,
-                font=(theme.FONT, 13, "bold"), height=38)
-            padx = (0, 4) if col_ == 0 else (4, 0) if col_ == 2 else (4, 4)
-            b.grid(row=row, column=col_, sticky="ew", padx=padx, pady=2)
+        specs = [
+            ("srv_start", "▶  " + t("srv_start_lbl"), self._start),
+            ("srv_stop", "■  " + t("srv_stop"), self._stop),
+            ("srv_restart", "⟳  " + t("srv_restart"), self._restart),
+            ("srv_mods", "🧩  " + t("srv_mods_lbl"), self._open_mods),
+            ("srv_settings", "⚙  " + t("srv_settings_lbl"),
+             self._open_settings),
+            ("srv_folder", "📁  " + t("srv_folder"), self._open_folder),
+        ]
+        for i, (key, text, cmd) in enumerate(specs):
+            b = ctk.CTkButton(acts, text=text, command=cmd, height=40,
+                              corner_radius=10,
+                              font=(theme.FONT, 12, "bold"),
+                              fg_color=theme.PANEL, border_width=1,
+                              border_color=theme.BORDER,
+                              hover_color=theme.HOVER, text_color=theme.TEXT)
+            b.grid(row=0, column=i, sticky="ew",
+                   padx=(0 if i == 0 else 3, 0 if i == 5 else 3))
             self._btns[key] = b
 
-        _btn("srv_start", self._start, theme.GREEN, 0, 0, "#06210f")
-        _btn("srv_stop", self._stop, theme.RED, 0, 1)
-        _btn("srv_restart", self._restart, theme.ORANGE, 0, 2)
-        _btn("srv_mods", self._open_mods, theme.PANEL_2, 1, 0)
-        _btn("srv_settings", self._open_settings, theme.PANEL_2, 1, 1)
-        _btn("srv_folder", self._open_folder, theme.PANEL_2, 1, 2)
-
+        # ---------------------------------------------------- console
+        cons = theme.card(col)
+        cons.grid(row=3, column=0, sticky="nsew")
+        cons.grid_rowconfigure(1, weight=1)
+        cons.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(cons, text=t("win_console"),
+                     font=(theme.FONT, 13, "bold"),
+                     text_color=theme.TEXT).grid(
+            row=0, column=0, sticky="w", padx=14, pady=(10, 4))
         self.console = ctk.CTkTextbox(
-            col, font=(theme.FONT_MONO, 11), fg_color=theme.CONSOLE_BG,
+            cons, font=(theme.FONT_MONO, 11), fg_color=theme.CONSOLE_BG,
             text_color=theme.CONSOLE_TEXT, corner_radius=8, state="disabled",
-            wrap="none")
-        self.console.grid(row=4, column=0, columnspan=2, sticky="nsew",
-                          padx=10, pady=10)
-
-        row = ctk.CTkFrame(col, fg_color="transparent")
-        row.grid(row=5, column=0, columnspan=2, sticky="ew", padx=10,
-                 pady=(0, 10))
+            wrap="none", border_width=1, border_color=theme.BORDER)
+        self.console.grid(row=1, column=0, sticky="nsew", padx=12)
+        row = ctk.CTkFrame(cons, fg_color="transparent")
+        row.grid(row=2, column=0, sticky="ew", padx=12, pady=10)
         row.grid_columnconfigure(0, weight=1)
         self.cmd_entry = ctk.CTkEntry(
-            row, placeholder_text=t("srv_cmd_ph"), fg_color=theme.PANEL_2,
-            border_color=theme.BORDER, text_color=theme.TEXT)
+            row, placeholder_text=t("srv_cmd_ph"), height=34,
+            fg_color=theme.PANEL_2, border_color=theme.BORDER,
+            text_color=theme.TEXT)
         self.cmd_entry.grid(row=0, column=0, sticky="ew", padx=(0, 8))
         self.cmd_entry.bind("<Return>", lambda _e: self._send())
-        ctk.CTkButton(row, text=t("srv_send"), width=90,
+        ctk.CTkButton(row, text=t("srv_send"), width=96, height=34,
+                      fg_color=theme.ACCENT, hover_color=theme.ACCENT_HOVER,
                       command=self._send).grid(row=0, column=1)
 
     def _build_players_col(self):
-        col = ctk.CTkFrame(self, fg_color=theme.PANEL, corner_radius=10)
+        col = theme.card(self)
         col.grid(row=0, column=2, sticky="nsew")
         col.grid_rowconfigure(1, weight=1)
         col.grid_columnconfigure(0, weight=1)
-
         self.players_title = ctk.CTkLabel(
-            col, text=t("players_online", n=0), font=(theme.FONT, 13, "bold"),
+            col, text=t("players_online", n=0), font=(theme.FONT, 14, "bold"),
             text_color=theme.TEXT)
-        self.players_title.grid(row=0, column=0, sticky="w", padx=12,
-                                pady=(10, 4))
-
-        self.players_scroll = ctk.CTkScrollableFrame(col, fg_color=theme.BG)
+        self.players_title.grid(row=0, column=0, sticky="w", padx=14,
+                                pady=(12, 6))
+        self.players_scroll = ctk.CTkScrollableFrame(
+            col, fg_color="transparent",
+            scrollbar_button_color=theme.PANEL_2,
+            scrollbar_button_hover_color=theme.HOVER)
         self.players_scroll.grid(row=1, column=0, sticky="nsew",
-                                 padx=8, pady=(0, 10))
+                                 padx=6, pady=(0, 10))
         self.players_scroll.grid_columnconfigure(0, weight=1)
 
-    # ---------------------------------------------------------------- liste
+    # ============================================================ liste
     def refresh(self):
         for w in self.list_scroll.winfo_children():
             w.destroy()
@@ -178,41 +261,39 @@ class ServersTab(ctk.CTkFrame):
         metas = sm.list_servers()
         if not metas:
             ctk.CTkLabel(self.list_scroll, text=t("srv_empty"),
-                         text_color=theme.MUTED, justify="left").grid(
-                row=0, column=0, sticky="w", padx=4, pady=4)
+                         text_color=theme.MUTED, justify="left",
+                         wraplength=190).grid(
+                row=0, column=0, sticky="w", padx=6, pady=6)
             return
         sel = self.meta["name"] if self.meta else None
         for i, meta in enumerate(metas):
             selected = meta["name"] == sel
             card = ctk.CTkFrame(
-                self.list_scroll, corner_radius=8, border_width=2,
-                fg_color=theme.HOVER if selected else theme.PANEL_2,
-                border_color=theme.ACCENT if selected else theme.PANEL_2)
-            card.grid(row=i, column=0, sticky="ew", pady=3)
-            card.grid_columnconfigure(0, weight=1)
+                self.list_scroll, corner_radius=10, border_width=1,
+                fg_color=theme.PANEL_2 if selected else "transparent",
+                border_color=theme.ACCENT if selected else theme.BORDER)
+            card.grid(row=i, column=0, sticky="ew", pady=3, padx=2)
+            card.grid_columnconfigure(1, weight=1)
             self._cards[meta["name"]] = card
+            running = bool(meta.get("running"))
+            dot = ctk.CTkLabel(card, text="●", width=16,
+                               font=(theme.FONT, 14),
+                               text_color=theme.GREEN if running
+                               else theme.DISABLED)
+            dot.grid(row=0, column=0, rowspan=2, padx=(10, 4))
             lbl = ctk.CTkLabel(card, text=meta["name"],
-                               font=(theme.FONT, 12, "bold"),
+                               font=(theme.FONT, 13, "bold"),
                                text_color=theme.TEXT, anchor="w")
-            lbl.grid(row=0, column=0, sticky="w", padx=8, pady=(6, 0))
-            running = meta.get("running")
-            state = ctk.CTkLabel(
-                card, text="●" if running else "○",
-                text_color=theme.GREEN if running else theme.MUTED,
-                font=(theme.FONT, 12))
-            state.grid(row=0, column=1, padx=(0, 8))
-            self._dots[meta["name"]] = [state, bool(running)]
+            lbl.grid(row=0, column=1, sticky="w", pady=(8, 0))
+            loader = LOADER_LABELS.get(meta["loader"], meta["loader"])
             sub = ctk.CTkLabel(
-                card,
-                text=f"{meta['loader']} · MC {meta['mc_version']}",
+                card, text=f"{loader} · {meta['mc_version']}",
                 font=(theme.FONT, 10), text_color=theme.MUTED, anchor="w")
-            sub.grid(row=1, column=0, columnspan=2, sticky="w", padx=8,
-                     pady=(0, 6))
-            # clic n'importe où sur la carte (frame + labels + canvas interne)
-            for w in (card, lbl, state, sub, *card.winfo_children()):
+            sub.grid(row=1, column=1, sticky="w", pady=(0, 8))
+            self._dots[meta["name"]] = [dot, running]
+            for w in (card, lbl, sub, dot, *card.winfo_children()):
                 w.bind("<Button-1>", lambda _e, m=meta: self._select(m))
 
-    # ------------------------------------------------------------ sélection
     def select_by_name(self, name: str):
         self.refresh()
         for meta in sm.list_servers():
@@ -226,77 +307,152 @@ class ServersTab(ctk.CTkFrame):
         self.proc.reload_meta()
         for name, card in self._cards.items():
             sel = name == meta["name"]
-            card.configure(fg_color=theme.HOVER if sel else theme.PANEL_2,
-                           border_color=theme.ACCENT if sel
-                           else theme.PANEL_2)
+            card.configure(fg_color=theme.PANEL_2 if sel else "transparent",
+                           border_color=theme.ACCENT if sel else theme.BORDER)
         self.sel_label.configure(text=meta["name"])
-        m = self.proc.meta
-        self.info_label.configure(
-            text=f"{m['loader']} {m['mc_version']} · port {m['port']} · "
-                 f"{round(int(m['ram_mb']) / 1024, 1):g} Go")
-        # console : on rejoue l'historique du serveur sélectionné
+        self._refresh_info()
         self.console.configure(state="normal")
         self.console.delete("1.0", "end")
         self.console.configure(state="disabled")
         lines, self._seen = self.proc.lines_since(0)
-        for line in lines:
-            self._append(line)
+        self._append_many(lines)
         self._last_players = None
         self._last_running = None
+        self._last_ui_state = None
         self._update_state()
+        self._update_stats()
         self._show_ip()
         self._refresh_players()
 
-    def _tracker(self):
-        return self.proc.tracker if self.proc else None
+    def _refresh_info(self):
+        m = self.proc.meta
+        props = load_properties(Path(m.get("dir", self.proc.path))
+                                / "server.properties")
+        try:
+            self._max_players = int(props.get("max-players", 20))
+        except ValueError:
+            self._max_players = 20
+        acc = {"premium": t("acc_premium"), "crack": t("acc_crack")}.get(
+            m.get("accounts"), t("acc_both"))
+        loader = LOADER_LABELS.get(m["loader"], m["loader"])
+        parts = [loader, f"MC {m['mc_version']}", acc]
+        if m.get("crossplay"):
+            parts.append("Java + Bedrock")
+        self.info_label.configure(text="  ·  ".join(parts))
 
-    # ------------------------------------------------------------------- IP
+    # ============================================================ IP
     def _show_ip(self):
+        for c in self._ip_chips:
+            c.destroy()
+        self._ip_chips.clear()
         if not self.meta:
             return
+        m = self.proc.meta
         ip = local_ip()
-        port = (self.proc.meta if self.proc else self.meta).get("port", 25565)
+        port = m.get("port", 25565)
         playit = playit_address(Path(self.meta["dir"]))
+        chips = [("Java", f"{ip}:{port}")]
         pub = playit or self._pub_ip
-        self.ip_label.configure(
-            text=f"{t('ip_local', ip=ip, port=port)}    " +
-                 (t('ip_public', ip=pub) if pub else t('ip_public_wait')))
+        if pub:
+            chips.append((t("ip_public_short"),
+                          pub if playit else f"{pub}:{port}"))
+        else:
+            chips.append((t("ip_public_short"), "…"))
+        if m.get("crossplay"):
+            chips.append(("Bedrock", f"{ip}:{BEDROCK_PORT}"))
+        for label, value in chips:
+            b = ctk.CTkButton(
+                self.ip_row, text=f"{label}   {value}", height=26,
+                corner_radius=13, font=(theme.FONT_MONO, 11),
+                fg_color=theme.PANEL_2, hover_color=theme.HOVER,
+                text_color=theme.TEXT, width=0)
+            b.configure(command=lambda v=value, w=b: self._copy(v, w))
+            b.pack(side="left", padx=4)
+            self._ip_chips.append(b)
         if not pub and self._pub_ip is None:
-            self._pub_ip = ""          # une seule requête en cours
+            self._pub_ip = ""
 
-            def _fetch():             # thread : ne touche pas à Tk
+            def _fetch():             # thread : pas de Tk
                 self._pub_ip = public_ip() or ""
                 self._ip_dirty = True
             threading.Thread(target=_fetch, daemon=True).start()
 
-    # -------------------------------------------------------------- actions
-    def _update_state(self):
-        running = bool(self.proc and self.proc.is_running())
-        starting = bool(self.proc and getattr(self.proc, "_starting", False))
-        if not self.proc:
-            self.state_label.configure(text="")
-        elif starting and not running:
-            self.state_label.configure(text="◌ " + t("srv_starting_short"),
-                                       text_color=theme.ORANGE)
-        else:
-            self.state_label.configure(
-                text=("● " + t("srv_running")) if running
-                else ("○ " + t("srv_stopped")),
-                text_color=theme.GREEN if running else theme.MUTED)
-        has = self.proc is not None
-        self._btns["srv_start"].configure(
-            state="normal" if has and not running and not starting
-            else "disabled")
-        self._btns["srv_stop"].configure(
-            state="normal" if running else "disabled")
-        self._btns["srv_restart"].configure(
-            state="normal" if running else "disabled")
-        for k in ("srv_mods", "srv_settings", "srv_folder"):
-            self._btns[k].configure(state="normal" if has else "disabled")
+    def _copy(self, value, widget):
+        if value == "…":
+            return
+        self.clipboard_clear()
+        self.clipboard_append(value)
+        old = widget.cget("text")
+        widget.configure(text=f"✔ {t('copied')}")
+        self.after(1200, lambda: widget.winfo_exists()
+                   and widget.configure(text=old))
 
+    # ============================================================ état
+    def _update_state(self):
+        proc = self.proc
+        running = bool(proc and proc.is_running())
+        starting = bool(proc and proc._starting)
+        state = (proc is not None, running, starting)
+        if state == self._last_ui_state:
+            return
+        self._last_ui_state = state
+        if not proc:
+            self.state_pill.configure(text="")
+        elif running:
+            self.state_pill.configure(text=f"  ● {t('srv_running')}  ",
+                                      fg_color=theme.GREEN,
+                                      text_color=theme.ON_GREEN)
+        elif starting:
+            self.state_pill.configure(
+                text=f"  ◌ {t('srv_starting_short')}  ",
+                fg_color=theme.ORANGE, text_color="#ffffff")
+        else:
+            self.state_pill.configure(text=f"  ○ {t('srv_stopped')}  ",
+                                      fg_color=theme.PANEL_2,
+                                      text_color=theme.MUTED)
+        has = proc is not None
+        theme.action_button(self._btns["srv_start"],
+                            has and not running and not starting,
+                            theme.GREEN, theme.GREEN_HOVER, theme.ON_GREEN)
+        theme.action_button(self._btns["srv_stop"], running,
+                            theme.RED, theme.RED_HOVER)
+        theme.action_button(self._btns["srv_restart"], running,
+                            theme.ORANGE, theme.ORANGE_HOVER)
+        for k in ("srv_mods", "srv_settings", "srv_folder"):
+            if has:
+                self._btns[k].configure(state="normal", fg_color=theme.PANEL,
+                                        text_color=theme.TEXT)
+            else:
+                theme.action_button(self._btns[k], False, None, None)
+
+    def _update_stats(self):
+        proc = self.proc
+        limit_gb = (int(proc.meta.get("ram_mb", 4096)) / 1024) if proc else 0
+        sysr = _sys_ram()
+        sys_txt = (t("sys_ram", used=f"{sysr[0]:.1f}", total=f"{sysr[1]:.0f}")
+                   if sysr else " ")
+        st = proc.stats() if proc else None
+        if st:
+            used = st["ram_mb"] / 1024
+            frac = used / limit_gb if limit_gb else 0
+            self.st_ram.set(f"{used:.1f} / {limit_gb:g} Go", frac, sys_txt,
+                            warn=frac > 0.9)
+            self.st_cpu.set(f"{st['cpu']:.0f} %", st["cpu"] / 100,
+                            t("cpu_hint"), warn=st["cpu"] > 90)
+            self.st_uptime.set(theme.fmt_duration(st["uptime"]), 1.0, " ")
+        else:
+            self.st_ram.set(f"0 / {limit_gb:g} Go" if proc else "—", 0,
+                            sys_txt)
+            self.st_cpu.set("0 %" if proc else "—", 0, " ")
+            self.st_uptime.set("—", 0, " ")
+        n = len(proc.tracker.players) if proc else 0
+        mx = self._max_players or 20
+        self.st_players.set(f"{n} / {mx}", n / mx, " ")
+
+    # ============================================================ actions
     def _start(self):
         proc = self.proc
-        if not proc or proc.is_running() or getattr(proc, "_starting", False):
+        if not proc or proc.is_running() or proc._starting:
             return
         proc._starting = True
         proc.log(t("srv_starting", name=proc.name))
@@ -317,13 +473,11 @@ class ServersTab(ctk.CTkFrame):
         if self.proc and self.proc.is_running():
             self.proc.log(t("srv_stop_req"))
             self.proc.stop()
-        self._update_state()
 
     def _restart(self):
         if self.proc and self.proc.is_running():
             self.proc.log(t("srv_stop_req"))
             self.proc.restart()
-        self._update_state()
 
     def _send(self):
         cmd = self.cmd_entry.get().strip()
@@ -331,7 +485,7 @@ class ServersTab(ctk.CTkFrame):
             return
         self.cmd_entry.delete(0, "end")
         if not self.proc or not self.proc.send(cmd):
-            self._append(t("srv_not_running"), "err")
+            self._append_many([t("srv_not_running")], "err")
             return
         self.proc.log(f"> {cmd}")
 
@@ -341,7 +495,14 @@ class ServersTab(ctk.CTkFrame):
 
     def _open_settings(self):
         if self.meta:
-            ServerSettings(self, self.meta)
+            ServerSettings(self, self.meta, on_saved=self._settings_saved)
+
+    def _settings_saved(self):
+        if self.proc:
+            self.proc.reload_meta()
+            self._refresh_info()
+            self._show_ip()
+            self._update_stats()
 
     def _open_folder(self):
         if self.meta:
@@ -362,65 +523,89 @@ class ServersTab(ctk.CTkFrame):
         self.meta = None
         self.proc = None
         self.refresh()
+        metas = sm.list_servers()
+        if metas:
+            self._select(metas[0])
+            return
         self.sel_label.configure(text=t("srv_none_sel"))
         self.info_label.configure(text="")
-        self.ip_label.configure(text="")
-        self.state_label.configure(text="")
+        self._show_ip()
+        self.console.configure(state="normal")
+        self.console.delete("1.0", "end")
+        self.console.configure(state="disabled")
+        self._update_state()
+        self._update_stats()
         self._refresh_players()
 
-    # -------------------------------------------------------------- console
-    def _append(self, line: str, tag: str | None = None):
-        if tag is None:
-            up = line.upper()
-            tag = ("err" if ("ERROR" in up or "EXCEPTION" in up
-                             or line.startswith("✖"))
-                   else "warn" if "WARN" in up
-                   else "info" if line.startswith(("──", ">")) else None)
-        colors = {"err": "#f87171", "warn": "#fbbf24", "info": theme.ACCENT,
-                  "ok": "#4ade80"}
-        tag = tag or "def"
-        self.console.tag_config(tag,
-                                foreground=colors.get(tag,
-                                                      theme.CONSOLE_TEXT))
+    # ============================================================ console
+    @staticmethod
+    def _tag(line):
+        up = line.upper()
+        if "ERROR" in up or "EXCEPTION" in up or line.startswith("✖"):
+            return "err"
+        if "WARN" in up:
+            return "warn"
+        if line.startswith(("──", ">")):
+            return "info"
+        return None
+
+    def _append_many(self, lines, tag=None):
+        if not lines:
+            return
+        for name, color in _TAG_COLORS.items():
+            self.console.tag_config(name, foreground=theme.c(color))
         self.console.configure(state="normal")
-        self.console.insert("end", line + "\n", tag)
+        for line in lines:
+            self.console.insert("end", line + "\n", tag or self._tag(line))
+        if int(self.console.index("end-1c").split(".")[0]) > 6000:
+            self.console.delete("1.0", "1000.0")
         self.console.see("end")
         self.console.configure(state="disabled")
 
-    # -------------------------------------------------------------- joueurs
+    # ============================================================ joueurs
     def _refresh_players(self):
-        tr = self._tracker()
+        tr = self.proc.tracker if self.proc else None
         names = sorted((tr.players if tr else {}), key=str.lower)
         self.players_title.configure(text=t("players_online", n=len(names)))
         for w in self.players_scroll.winfo_children():
             w.destroy()
         if not names:
             ctk.CTkLabel(self.players_scroll, text=t("no_players"),
-                         text_color=theme.MUTED).grid(
-                row=0, column=0, sticky="w", padx=4, pady=4)
+                         text_color=theme.MUTED, wraplength=190,
+                         justify="left").grid(
+                row=0, column=0, sticky="w", padx=6, pady=6)
             return
         for i, name in enumerate(names):
             card = ctk.CTkFrame(self.players_scroll, fg_color=theme.PANEL_2,
-                                corner_radius=8)
-            card.grid(row=i, column=0, sticky="ew", pady=3)
-            card.grid_columnconfigure(0, weight=1)
-            ctk.CTkLabel(card, text=name, font=(theme.FONT, 12),
+                                corner_radius=10)
+            card.grid(row=i, column=0, sticky="ew", pady=3, padx=2)
+            card.grid_columnconfigure(1, weight=1)
+            ctk.CTkLabel(card, text=name[:1].upper(), width=30, height=30,
+                         corner_radius=8, fg_color=theme.ACCENT,
+                         text_color="#ffffff",
+                         font=(theme.FONT, 12, "bold")).grid(
+                row=0, column=0, padx=8, pady=6)
+            ctk.CTkLabel(card, text=name, font=(theme.FONT, 12, "bold"),
                          text_color=theme.TEXT, anchor="w").grid(
-                row=0, column=0, sticky="w", padx=8, pady=6)
-            btn = ctk.CTkButton(card, text="⋯", width=28, height=24,
-                                fg_color=theme.HOVER, corner_radius=6,
+                row=0, column=1, sticky="w")
+            btn = ctk.CTkButton(card, text="⋯", width=30, height=26,
+                                fg_color=theme.PANEL, corner_radius=8,
+                                hover_color=theme.HOVER,
                                 text_color=theme.TEXT)
-            btn.grid(row=0, column=1, padx=6)
+            btn.grid(row=0, column=2, padx=6)
             btn.configure(command=lambda b=btn, n=name: self._player_menu(n, b))
 
     def _player_menu(self, name, widget):
         proc = self.proc
-        menu = tk.Menu(self, tearoff=0, bg=theme.PANEL_2, fg=theme.TEXT,
-                       activebackground=theme.ACCENT,
-                       activeforeground="#ffffff")
+        style = dict(tearoff=0, bg=theme.c(theme.PANEL_2),
+                     fg=theme.c(theme.TEXT),
+                     activebackground=theme.c(theme.ACCENT),
+                     activeforeground="#ffffff")
+        menu = tk.Menu(self, **style)
 
         def act(fn, *args):
             fn(proc, *args)
+            proc.log(f"> {fn.__name__} {' '.join(str(a) for a in args)}")
 
         menu.add_command(label=t("pm_msg"), command=lambda: _ask(
             self, t("pm_title"), t("pm_to", name=name),
@@ -437,9 +622,7 @@ class ServersTab(ctk.CTkFrame):
         menu.add_separator()
         menu.add_command(label=t("op"), command=lambda: act(pl.op, name))
         menu.add_command(label=t("deop"), command=lambda: act(pl.deop, name))
-        gm = tk.Menu(menu, tearoff=0, bg=theme.PANEL_2, fg=theme.TEXT,
-                     activebackground=theme.ACCENT,
-                     activeforeground="#ffffff")
+        gm = tk.Menu(menu, **style)
         for mode in ("survival", "creative", "adventure", "spectator"):
             gm.add_command(label=t("gamemode", mode=mode),
                            command=lambda m=mode: act(pl.gamemode, name, m))
@@ -452,40 +635,40 @@ class ServersTab(ctk.CTkFrame):
         finally:
             menu.grab_release()
 
-    # ---------------------------------------------------------------- boucle
+    # ============================================================ boucle
     def _pump(self):
-        """Toutes les 150 ms, depuis le thread Tk : console, statut, joueurs."""
+        """Toutes les 150 ms, thread Tk : console, statut, stats, joueurs."""
         try:
             if self.proc:
                 lines, self._seen = self.proc.lines_since(self._seen)
-                for line in lines:
-                    self._append(line)
+                self._append_many(lines)
                 running = self.proc.is_running()
                 if running != self._last_running:
                     if self._last_running and not running:
-                        self._append(t("srv_proc_end",
-                                       code=self.proc.exit_code), "warn")
+                        self._append_many(
+                            [t("srv_proc_end", code=self.proc.exit_code)],
+                            "warn")
                     self._last_running = running
-                self._update_state()
                 players = frozenset(self.proc.tracker.players)
                 if players != self._last_players:
                     self._last_players = players
                     self._refresh_players()
-                self._list_tick += 1
-                if running and self._list_tick % 60 == 0:   # ~9 s
-                    self.proc.send("list")
-            # pastilles ●/○ mises à jour en place (sans recréer la liste)
-            for name, slot in self._dots.items():
-                p = sm.PROCESSES.get(name)
-                on = bool(p and p.is_running())
-                if on != slot[1]:
-                    slot[1] = on
-                    slot[0].configure(text="●" if on else "○",
-                                      text_color=theme.GREEN if on
-                                      else theme.MUTED)
+                if running:
+                    self.proc.request_list()
+            self._update_state()
+            if self._tick % 7 == 0:                         # ~1 s
+                self._update_stats()
+                for name, slot in self._dots.items():
+                    p = sm.PROCESSES.get(name)
+                    on = bool(p and p.is_running())
+                    if on != slot[1]:
+                        slot[1] = on
+                        slot[0].configure(text_color=theme.GREEN if on
+                                          else theme.DISABLED)
             if self._ip_dirty:
                 self._ip_dirty = False
                 self._show_ip()
+            self._tick += 1
         except Exception:  # noqa: BLE001 — la boucle ne doit jamais mourir
             import traceback
             traceback.print_exc()

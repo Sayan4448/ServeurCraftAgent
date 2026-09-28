@@ -28,7 +28,7 @@ build_exe_options = {
     # indispensable pour les assets de customtkinter (thèmes .json, polices)
     # et le bundle de certificats de certifi (SSL).
     "zip_exclude_packages": ["*"],
-    "packages": ["tkinter", "requests", "darkdetect", "customtkinter", "PIL"],
+    "packages": ["tkinter", "requests", "darkdetect", "customtkinter", "PIL", "psutil"],
     # fichiers embarqués à côté de l'exe dans le dossier d'installation
     "include_files": ["README.md", "CHANGELOG.md", "assets"],
     "excludes": [

@@ -62,8 +62,8 @@ class ModsManager(ctk.CTkToplevel):
 
         self.source_seg = ctk.CTkSegmentedButton(
             ctrl, values=["Modrinth", "CurseForge"],
-            selected_color=theme.ACCENT,
-            selected_hover_color=theme.ACCENT_HOVER,
+            selected_color=theme.SEL, text_color=theme.TEXT,
+            selected_hover_color=theme.SEL_HOVER,
             unselected_color=theme.PANEL_2,
             unselected_hover_color=theme.HOVER,
             command=self._source_changed)
@@ -77,8 +77,8 @@ class ModsManager(ctk.CTkToplevel):
             kinds.append("Plugins")
         self.kind_seg = ctk.CTkSegmentedButton(
             ctrl, values=kinds or ["Mods"],
-            selected_color=theme.ACCENT,
-            selected_hover_color=theme.ACCENT_HOVER,
+            selected_color=theme.SEL, text_color=theme.TEXT,
+            selected_hover_color=theme.SEL_HOVER,
             unselected_color=theme.PANEL_2,
             unselected_hover_color=theme.HOVER,
             command=lambda _v: self._search(reset=True))
@@ -268,8 +268,8 @@ class ModsManager(ctk.CTkToplevel):
         btns.pack(side="right", padx=8, pady=8)
         inst = ctk.CTkButton(
             btns, text=t("mods_install"), width=110, height=30,
-            fg_color=theme.GREEN, hover_color="#16a34a",
-            text_color="#06210f")
+            fg_color=theme.GREEN, hover_color=theme.GREEN_HOVER,
+            text_color=theme.ON_GREEN)
         inst.configure(command=lambda b=inst, res=r: self._install_latest(res, b))
         inst.pack(pady=(0, 6))
         ctk.CTkButton(
@@ -360,7 +360,7 @@ class ModsManager(ctk.CTkToplevel):
                          ).pack(side="left", padx=6, pady=6)
             ctk.CTkButton(
                 row, text=t("mods_del"), width=80, height=26,
-                fg_color=theme.RED, hover_color="#b91c1c",
+                fg_color=theme.RED, hover_color=theme.RED_HOVER,
                 command=lambda p=it["path"]: self._remove(p),
             ).pack(side="right", padx=8)
 
@@ -440,7 +440,7 @@ class ModpackDialog(ctk.CTkToplevel):
         ctk.CTkButton(
             self, text=t("mp_install"), height=36,
             font=(theme.FONT, 13, "bold"), fg_color=theme.GREEN,
-            hover_color="#16a34a", text_color="#06210f",
+            hover_color=theme.GREEN_HOVER, text_color=theme.ON_GREEN,
             command=self._install).grid(row=4, column=0, sticky="ew",
                                         padx=12, pady=(4, 12))
 
@@ -521,8 +521,8 @@ class ModDetailDialog(ctk.CTkToplevel):
                 command=lambda: webbrowser.open(url)).pack(pady=3)
         inst = ctk.CTkButton(
             btns, text=t("mods_install"), width=150, height=30,
-            fg_color=theme.GREEN, hover_color="#16a34a",
-            text_color="#06210f")
+            fg_color=theme.GREEN, hover_color=theme.GREEN_HOVER,
+            text_color=theme.ON_GREEN)
         inst.configure(command=lambda b=inst:
                        manager._install_latest(result, b))
         inst.pack(pady=3)
@@ -613,8 +613,8 @@ class ModDetailDialog(ctk.CTkToplevel):
             ).pack(anchor="w")
             btn = ctk.CTkButton(
                 row, text=t("mods_install"), width=90, height=28,
-                fg_color=theme.GREEN, hover_color="#16a34a",
-                text_color="#06210f")
+                fg_color=theme.GREEN, hover_color=theme.GREEN_HOVER,
+                text_color=theme.ON_GREEN)
             btn.configure(command=lambda b=btn, ver=v:
                           self.manager._install_version(self.result, ver, b))
             btn.pack(side="right", padx=10)

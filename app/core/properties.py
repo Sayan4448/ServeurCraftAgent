@@ -14,6 +14,10 @@ DEFAULTS = {
     "spawn-protection": "0",
     "white-list": "false",
     "pvp": "true",
+    "spawn-monsters": "true",
+    "spawn-animals": "true",
+    "spawn-npcs": "true",
+    "allow-nether": "true",
     "allow-flight": "true",            # évite les kicks avec certains mods
     "sync-chunk-writes": "false",
 }

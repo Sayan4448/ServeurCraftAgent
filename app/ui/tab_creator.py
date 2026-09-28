@@ -76,30 +76,53 @@ class CreatorTab(ctk.CTkFrame):
             side="left", padx=6)
 
         label(6, t("cre_accounts"))
+        accbox = ctk.CTkFrame(form, fg_color="transparent")
+        accbox.grid(row=6, column=1, sticky="ew", padx=16, pady=6)
         self.accounts_seg = ctk.CTkSegmentedButton(
-            form, values=[t("acc_premium"), t("acc_crack"), t("acc_both")],
-            selected_color=theme.ACCENT,
-            selected_hover_color=theme.ACCENT_HOVER,
+            accbox, values=[t("acc_crack"), t("acc_premium"), t("acc_both")],
+            selected_color=theme.SEL, text_color=theme.TEXT,
+            selected_hover_color=theme.SEL_HOVER,
             unselected_color=theme.PANEL_2,
             unselected_hover_color=theme.HOVER)
         self.accounts_seg.set(t("acc_both"))
-        self.accounts_seg.grid(row=6, column=1, sticky="w", padx=16, pady=6)
+        self.accounts_seg.pack(anchor="w")
+        self.crossplay_check = ctk.CTkCheckBox(
+            accbox, text=t("cp_switch"), text_color=theme.TEXT,
+            fg_color=theme.GREEN, hover_color=theme.GREEN_HOVER)
+        self.crossplay_check.pack(anchor="w", pady=(8, 0))
+        ctk.CTkLabel(accbox, text=t("cp_hint_short"), font=(theme.FONT, 10),
+                     text_color=theme.MUTED, justify="left",
+                     wraplength=380).pack(anchor="w")
 
-        # ------------------------------------------------------ voice chat
+        # ------------------------------------------------------ gameplay
         sep1 = ctk.CTkFrame(form, height=1, fg_color=theme.BORDER)
         sep1.grid(row=7, column=0, columnspan=2, sticky="ew", padx=16, pady=10)
 
-        label(8, "Voice Chat")
+        label(8, t("ss_gameplay"))
+        gbox = ctk.CTkFrame(form, fg_color="transparent")
+        gbox.grid(row=8, column=1, sticky="w", padx=16, pady=6)
+        self.pvp_switch = ctk.CTkSwitch(gbox, text=t("ss_pvp"),
+                                        text_color=theme.TEXT,
+                                        progress_color=theme.ACCENT)
+        self.pvp_switch.select()
+        self.pvp_switch.pack(side="left", padx=(0, 16))
+        self.monsters_switch = ctk.CTkSwitch(gbox, text=t("ss_monsters"),
+                                             text_color=theme.TEXT,
+                                             progress_color=theme.ACCENT)
+        self.monsters_switch.select()
+        self.monsters_switch.pack(side="left")
+
+        label(9, "Voice Chat")
         voicebox = ctk.CTkFrame(form, fg_color="transparent")
-        voicebox.grid(row=8, column=1, sticky="ew", padx=16, pady=6)
+        voicebox.grid(row=9, column=1, sticky="ew", padx=16, pady=6)
         self.voice_check = ctk.CTkCheckBox(
             voicebox, text=t("cre_install"), text_color=theme.TEXT,
             fg_color=theme.ACCENT, hover_color=theme.ACCENT_HOVER)
         self.voice_check.pack(side="left")
         self.voice_choice = ctk.CTkSegmentedButton(
             voicebox, values=["Simple Voice Chat", "Plasmo Voice"],
-            selected_color=theme.ACCENT,
-            selected_hover_color=theme.ACCENT_HOVER,
+            selected_color=theme.SEL, text_color=theme.TEXT,
+            selected_hover_color=theme.SEL_HOVER,
             unselected_color=theme.PANEL_2,
             unselected_hover_color=theme.HOVER)
         self.voice_choice.set("Simple Voice Chat")
@@ -107,18 +130,19 @@ class CreatorTab(ctk.CTkFrame):
 
         # --------------------------------------------------------- playit
         sep2 = ctk.CTkFrame(form, height=1, fg_color=theme.BORDER)
-        sep2.grid(row=9, column=0, columnspan=2, sticky="ew", padx=16, pady=10)
+        sep2.grid(row=10, column=0, columnspan=2, sticky="ew", padx=16,
+                  pady=10)
 
-        label(10, "Playit.gg")
+        label(11, "Playit.gg")
         self.playit_check = ctk.CTkCheckBox(
             form, text=t("cre_playit"),
             text_color=theme.TEXT, fg_color=theme.ACCENT,
             hover_color=theme.ACCENT_HOVER, command=self._toggle_playit)
-        self.playit_check.grid(row=10, column=1, sticky="w", padx=16, pady=6)
+        self.playit_check.grid(row=11, column=1, sticky="w", padx=16, pady=6)
 
         self.playit_frame = ctk.CTkFrame(form, fg_color=theme.PANEL_2,
                                          corner_radius=8)
-        self.playit_frame.grid(row=11, column=0, columnspan=2, sticky="ew",
+        self.playit_frame.grid(row=12, column=0, columnspan=2, sticky="ew",
                                padx=16, pady=(0, 10))
         self.playit_frame.grid_columnconfigure(1, weight=1)
         for i, (lab, default, ph) in enumerate((
@@ -139,9 +163,9 @@ class CreatorTab(ctk.CTkFrame):
         self.create_btn = ctk.CTkButton(
             form, text=t("cre_create"), height=42,
             font=(theme.FONT, 14, "bold"), fg_color=theme.GREEN,
-            hover_color="#16a34a", text_color="#06210f",
+            hover_color=theme.GREEN_HOVER, text_color=theme.ON_GREEN,
             command=self._create)
-        self.create_btn.grid(row=12, column=0, columnspan=2, sticky="ew",
+        self.create_btn.grid(row=13, column=0, columnspan=2, sticky="ew",
                              padx=16, pady=(8, 16))
 
         # ------------------------------------------------------------- droite
@@ -266,6 +290,12 @@ class CreatorTab(ctk.CTkFrame):
             "port": port,
             "online_mode": accounts == "premium",
             "accounts": accounts,
+            "crossplay": bool(self.crossplay_check.get()),
+            "props": {
+                "pvp": "true" if self.pvp_switch.get() else "false",
+                "spawn-monsters": ("true" if self.monsters_switch.get()
+                                   else "false"),
+            },
             "voice": voice,
             "playit": playit,
         }

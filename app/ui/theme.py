@@ -1,41 +1,80 @@
-"""Palette et styles — thème sombre ou clair.
+"""Palette et styles.
 
-`apply(mode)` met à jour les constantes du module AVANT la construction de
-l'UI (appelé dans main.py au démarrage). Le changement de thème s'applique
-au prochain lancement.
+Chaque couleur est un tuple (clair, sombre) : CustomTkinter choisit la bonne
+selon le mode et **rebascule en direct** quand on change de thème.
+Pour les widgets Tk natifs (Menu, tags de Textbox) qui n'acceptent qu'une
+chaîne, utiliser `c(couleur)`.
 """
 import customtkinter as ctk
 
-_DARK = {
-    "BG": "#0e1116", "PANEL": "#151a23", "PANEL_2": "#1b2230",
-    "HOVER": "#232d40", "BORDER": "#2a3347",
-    "ACCENT": "#3b82f6", "ACCENT_HOVER": "#2563eb",
-    "GREEN": "#22c55e", "RED": "#ef4444", "ORANGE": "#f59e0b",
-    "TEXT": "#e6e9ef", "MUTED": "#8b94a7",
-    "CONSOLE_BG": "#0a0d12", "CONSOLE_TEXT": "#c9d1d9",
-}
-
-_LIGHT = {
-    "BG": "#eef1f6", "PANEL": "#ffffff", "PANEL_2": "#e6eaf2",
-    "HOVER": "#d4dbe8", "BORDER": "#c3cddb",
-    "ACCENT": "#2563eb", "ACCENT_HOVER": "#1d4ed8",
-    "GREEN": "#16a34a", "RED": "#dc2626", "ORANGE": "#d97706",
-    "TEXT": "#182130", "MUTED": "#5d6a80",
-    "CONSOLE_BG": "#f4f6fa", "CONSOLE_TEXT": "#1c2430",
-}
-
-BG = PANEL = PANEL_2 = HOVER = BORDER = ACCENT = ACCENT_HOVER = ""
-GREEN = RED = ORANGE = TEXT = MUTED = CONSOLE_BG = CONSOLE_TEXT = ""
+BG = ("#eef1f6", "#0b0e13")
+PANEL = ("#ffffff", "#131820")
+PANEL_2 = ("#e9edf4", "#1a212c")
+HOVER = ("#dbe2ee", "#242e3d")
+BORDER = ("#d3dbe7", "#263041")
+ACCENT = ("#2563eb", "#3b82f6")
+ACCENT_HOVER = ("#1d4ed8", "#2563eb")
+SEL = ("#bfdbfe", "#1e40af")          # sélection (boutons segmentés)
+SEL_HOVER = ("#93c5fd", "#1d4ed8")
+GREEN = ("#16a34a", "#22c55e")
+GREEN_HOVER = ("#15803d", "#16a34a")
+RED = ("#dc2626", "#ef4444")
+RED_HOVER = ("#b91c1c", "#dc2626")
+ORANGE = ("#d97706", "#f59e0b")
+ORANGE_HOVER = ("#b45309", "#d97706")
+PURPLE = ("#7c3aed", "#a78bfa")
+TEXT = ("#111827", "#e6e9ef")
+MUTED = ("#64748b", "#8b94a7")
+CONSOLE_BG = ("#f7f9fc", "#080a0e")
+CONSOLE_TEXT = ("#1f2937", "#c9d1d9")
+DISABLED = ("#cbd5e1", "#2a3240")
+DISABLED_TEXT = ("#94a3b8", "#5b6576")
+ON_ACCENT = "#ffffff"
+ON_GREEN = ("#ffffff", "#052e16")
 
 FONT = "Segoe UI"
 FONT_MONO = "Consolas"
 
 
+def is_dark() -> bool:
+    return ctk.get_appearance_mode() == "Dark"
+
+
+def c(color) -> str:
+    """Résout un tuple (clair, sombre) pour les widgets Tk natifs."""
+    if isinstance(color, (tuple, list)):
+        return color[1] if is_dark() else color[0]
+    return color
+
+
 def apply(mode: str) -> None:
-    p = _LIGHT if mode == "light" else _DARK
-    globals().update(p)
-    ctk.set_appearance_mode(mode)
+    ctk.set_appearance_mode("light" if mode == "light" else "dark")
 
 
-# palette par défaut au cas où apply() n'aurait pas été appelé
-globals().update(_DARK)
+def action_button(btn, enabled: bool, color, hover, text_color=ON_ACCENT):
+    """Bouton coloré quand actif, grisé (et visiblement inactif) sinon."""
+    if enabled:
+        btn.configure(state="normal", fg_color=color, hover_color=hover,
+                      text_color=text_color)
+    else:
+        btn.configure(state="disabled", fg_color=DISABLED,
+                      text_color_disabled=DISABLED_TEXT)
+
+
+def card(parent, **kw):
+    kw.setdefault("fg_color", PANEL)
+    kw.setdefault("corner_radius", 12)
+    kw.setdefault("border_width", 1)
+    kw.setdefault("border_color", BORDER)
+    return ctk.CTkFrame(parent, **kw)
+
+
+def fmt_duration(sec: float) -> str:
+    sec = int(sec)
+    h, rem = divmod(sec, 3600)
+    m, s = divmod(rem, 60)
+    if h:
+        return f"{h} h {m:02d} min"
+    if m:
+        return f"{m} min {s:02d} s"
+    return f"{s} s"

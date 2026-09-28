@@ -2,6 +2,32 @@
 
 ## v0.20.0 — Release (2026-09-29)
 
+**Nouvelle interface**
+- Tableau de bord par serveur : pastille d'état, IP cliquables (copie),
+  cartes **Mémoire** (utilisée / limite + RAM du PC), **Processeur**,
+  **Joueurs** (x / max) et **En ligne depuis**
+- Boutons grisés quand indisponibles (plus de faux boutons « actifs »)
+- Thème clair / sombre **instantané** (bouton ☀/☾ en haut, sans redémarrer)
+- Boutons segmentés lisibles en mode clair, en-tête et onglets redessinés
+
+**Cross-play Java + Bedrock (automatique)**
+- Case « Cross-play » dans le créateur et la Config : installe
+  **Geyser Standalone** (proxy Bedrock UDP 19132, démarré/arrêté avec le
+  serveur), **Floodgate** (Bedrock sans compte Java), **ViaVersion +
+  ViaBackwards** ; clé Floodgate et port configurés tout seuls
+- Fonctionne avec les comptes **Crack**, **Premium** et **Les deux**
+- « Les deux » installe automatiquement **AuthMe** (plugins) / **EasyAuth**
+  (Fabric) : les joueurs crack font /register, personne ne vole un pseudo
+
+**Par défaut** : comptes « Les deux », PvP et monstres activés
+
+**Correctifs**
+- Java resté ouvert après fermeture brutale de l'app → détecté et arrêté au
+  lancement (c'était la cause du « le serveur ne se lance plus »)
+- Fermer l'app arrête proprement les serveurs (avec confirmation)
+- Accents corrects dans la console (Java forcé en UTF-8), codes couleur
+  ANSI retirés, `list` envoyé seulement une fois le serveur prêt
+
 **Correctifs de stabilité (boutons / lancement)**
 - La console, le statut et les joueurs ne passent plus par des appels Tkinter
   depuis les threads (source des boutons « morts » et de la console vide) :

@@ -10,7 +10,7 @@ from collections import deque
 from pathlib import Path
 
 from ..config import SERVERS_DIR
-from . import downloader, java as java_mod, mods as mods_mod
+from . import crossplay, downloader, java as java_mod, mods as mods_mod
 from .properties import write_server_properties
 
 META_FILE = "servercraft.json"
@@ -129,6 +129,7 @@ def create_server(options: dict, progress_cb=None, log=print) -> dict:
             max_players=options.get("max_players", 20),
             difficulty=options.get("difficulty", "normal"),
             gamemode=options.get("gamemode", "survival"),
+            extra=options.get("props"),
         )
         log("server.properties généré (mode offline si non coché).")
 
@@ -144,6 +145,21 @@ def create_server(options: dict, progress_cb=None, log=print) -> dict:
                 path, loader, mods_mod.DEFAULT_VOICE_PORT, ""
             )
             log("Config Voice Chat pré-générée (UDP 24454).")
+
+        # 5b) Cross-play Bedrock + sécurité des comptes crack
+        accounts = options.get("accounts",
+                               "premium" if options.get("online_mode")
+                               else "both")
+        crossplay_on = bool(options.get("crossplay"))
+        if crossplay_on:
+            try:
+                crossplay.install(path, loader, mc_version, java=java,
+                                  log=log)
+            except Exception as e:  # noqa: BLE001 — non bloquant
+                log(f"⚠ Cross-play non installé : {e}")
+                crossplay_on = False
+        if accounts == "both":
+            crossplay.install_auth(path, loader, mc_version, log=log)
 
         # 6) Playit.gg
         summary = ""
@@ -174,9 +190,8 @@ def create_server(options: dict, progress_cb=None, log=print) -> dict:
             "ram_mb": int(options.get("ram_mb", 4096)),
             "port": int(options.get("port", 25565)),
             "online_mode": bool(options.get("online_mode", False)),
-            "accounts": options.get("accounts",
-                                    "premium" if options.get("online_mode")
-                                    else "both"),
+            "accounts": accounts,
+            "crossplay": crossplay_on,
             "voice": voice,
             "jar": meta_jar,
             "launch_args": launch_args,
@@ -232,6 +247,13 @@ def _find_forge_jar(path: Path) -> str:
 PROCESSES: dict = {}
 
 
+_ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]|[\ufffd\x1b]?\[[0-9;]*m")
+
+# sortie console Java en UTF-8 (sinon cp1252 sous Windows → accents cassés)
+_ENC_FLAGS = ["-Dfile.encoding=UTF-8", "-Dstdout.encoding=UTF-8",
+              "-Dstderr.encoding=UTF-8"]
+
+
 def build_launch_command(path: Path, meta: dict, log=print) -> list:
     # ensure_java vérifie la version requise et télécharge un JRE si besoin
     java = java_mod.ensure_java(meta["mc_version"], log=log)
@@ -239,16 +261,52 @@ def build_launch_command(path: Path, meta: dict, log=print) -> list:
     if meta.get("launch_args"):
         # Réplique run.bat : java @user_jvm_args.txt @.../win_args.txt nogui
         (path / "user_jvm_args.txt").write_text(
-            f"-Xms{ram}M\n-Xmx{ram}M\n", encoding="utf-8"
+            f"-Xms{ram}M\n-Xmx{ram}M\n" + "\n".join(_ENC_FLAGS) + "\n",
+            encoding="utf-8"
         )
         return [
             str(java), "@user_jvm_args.txt",
             f"@{meta['launch_args']}", "nogui",
         ]
     return [
-        str(java), f"-Xms{ram}M", f"-Xmx{ram}M",
+        str(java), f"-Xms{ram}M", f"-Xmx{ram}M", *_ENC_FLAGS,
         "-jar", meta.get("jar", "server.jar"), "nogui",
     ]
+
+
+def find_orphans(path: Path) -> list:
+    """Process Java qui tournent encore dans ce dossier serveur (app fermée
+    brutalement) — ils verrouillent le monde et bloquent tout relancement."""
+    try:
+        import psutil
+    except ImportError:
+        return []
+    target = os.path.normcase(str(Path(path).resolve()))
+    out = []
+    for p in psutil.process_iter(["name", "cwd"]):
+        try:
+            if (p.info["name"] or "").lower().startswith("java") and \
+                    p.info["cwd"] and \
+                    os.path.normcase(p.info["cwd"]) == target:
+                out.append(p)
+        except (psutil.Error, OSError):
+            continue
+    return out
+
+
+def stop_all(timeout: float = 30.0) -> None:
+    """Arrêt propre de tous les serveurs lancés (fermeture de l'app)."""
+    running = [p for p in PROCESSES.values() if p.is_running()]
+    for p in running:
+        p.send("stop")
+    deadline = time.time() + timeout
+    for p in running:
+        try:
+            p.proc.wait(timeout=max(0.1, deadline - time.time()))
+        except subprocess.TimeoutExpired:
+            p.proc.kill()
+    for p in PROCESSES.values():
+        p._stop_geyser()
 
 
 class ServerProcess:
@@ -274,6 +332,11 @@ class ServerProcess:
         self.tracker = PlayerTracker(name)
         self.exit_code = None
         self._starting = False       # démarrage en cours (Java, Popen…)
+        self._geyser = None          # process Geyser Standalone
+        self._java = None
+        self.ready = False
+        self._ps = None              # psutil.Process (stats)
+        self.started_at = 0.0
         self._lock = threading.Lock()
 
     def log(self, line: str) -> None:
@@ -288,6 +351,31 @@ class ServerProcess:
             n = min(self.seq - seen, len(self.backlog))
             new = list(self.backlog)[-n:] if n > 0 else []
             return new, self.seq
+
+    def request_list(self, every: float = 10.0) -> None:
+        """Rafraîchit la liste des joueurs (`list`), au plus toutes les
+        `every` secondes, quel que soit le nombre de fenêtres ouvertes."""
+        now = time.time()
+        if self.ready and now - getattr(self, "_last_list", 0) >= every:
+            self._last_list = now
+            self.send("list")
+
+    def stats(self) -> dict | None:
+        """RAM (Mo) / CPU (% de la machine) / uptime du process Java."""
+        if not self.is_running():
+            self._ps = None
+            return None
+        try:
+            import psutil
+            if self._ps is None or self._ps.pid != self.proc.pid:
+                self._ps = psutil.Process(self.proc.pid)
+                self._ps.cpu_percent(None)       # amorce la mesure
+            mem = self._ps.memory_info().rss / (1024 * 1024)
+            cpu = self._ps.cpu_percent(None) / (psutil.cpu_count() or 1)
+            return {"ram_mb": mem, "cpu": min(cpu, 100.0),
+                    "uptime": time.time() - self.started_at}
+        except Exception:  # noqa: BLE001 — process en train de s'arrêter
+            return None
 
     def reload_meta(self) -> None:
         try:
@@ -312,9 +400,27 @@ class ServerProcess:
         if on_exit is not None:
             self.on_exit = on_exit
         self.reload_meta()           # RAM/port modifiés dans ⚙ Config
+        for orphan in find_orphans(self.path):
+            self.log(f"── Ancien processus du serveur encore actif "
+                     f"(PID {orphan.pid}) : arrêt… ──")
+            try:
+                orphan.terminate()
+                orphan.wait(15)
+            except Exception:  # noqa: BLE001
+                try:
+                    orphan.kill()
+                except Exception:  # noqa: BLE001
+                    pass
+            lock = self.path / "world" / "session.lock"
+            try:
+                lock.unlink(missing_ok=True)
+            except OSError:
+                pass
         self.exit_code = None
+        self.ready = False           # passe à True au « Done (…) »
         self.tracker.players.clear()
         cmd = build_launch_command(self.path, self.meta, log=self.log)
+        self._java = cmd[0]
         self.proc = subprocess.Popen(
             cmd, cwd=str(self.path),
             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -322,6 +428,8 @@ class ServerProcess:
             encoding="utf-8", bufsize=1,
             creationflags=NO_WINDOW,
         )
+        self.started_at = time.time()
+        self._ps = None
         threading.Thread(target=self._reader, args=(self.proc,),
                          daemon=True).start()
         threading.Thread(target=self._waiter, args=(self.proc,),
@@ -329,12 +437,18 @@ class ServerProcess:
 
     def _reader(self, proc) -> None:
         for line in proc.stdout:
-            line = line.rstrip("\r\n")
+            line = _ANSI.sub("", line.rstrip("\r\n"))
+            just_ready = not self.ready and "Done (" in line
+            if just_ready:
+                self.ready = True
             self.log(line)
             try:
                 self.tracker.feed(self.name, line)
             except Exception:
                 pass
+            if just_ready and crossplay.installed(self.path):
+                threading.Thread(target=self._start_geyser,
+                                 daemon=True).start()
             for cb in [self.on_line, *self.listeners]:
                 if cb:
                     try:
@@ -342,8 +456,50 @@ class ServerProcess:
                     except Exception:
                         pass
 
+    # ------------------------------------------------ proxy Bedrock (Geyser)
+    def _start_geyser(self) -> None:
+        """Lance Geyser Standalone une fois le serveur prêt (clé Floodgate
+        générée). Ses lignes arrivent dans la console préfixées [Bedrock]."""
+        try:
+            gdir = crossplay.geyser_dir(self.path)
+            for orphan in find_orphans(gdir):
+                orphan.kill()
+            if not (gdir / "config.yml").exists():
+                self.log("── Cross-play : première configuration de Geyser… ──")
+                crossplay._generate_config(gdir, self._java)
+            auth = crossplay.configure(self.path,
+                                       int(self.meta.get("port", 25565)),
+                                       self.meta.get("accounts", "both"))
+            self.log(f"── Cross-play : démarrage du proxy Bedrock "
+                     f"(UDP {crossplay.BEDROCK_PORT}, auth {auth}) ──")
+            self._geyser = crossplay.launch(self.path, self._java)
+            threading.Thread(target=self._geyser_reader,
+                             args=(self._geyser,), daemon=True).start()
+        except Exception as e:  # noqa: BLE001
+            self.log(f"✖ Cross-play : Geyser n'a pas pu démarrer : {e}")
+
+    def _geyser_reader(self, gp) -> None:
+        for line in gp.stdout:
+            line = _ANSI.sub("", line.rstrip("\r\n"))
+            # bruit JVM sans intérêt pour l'utilisateur
+            if not line.strip() or line.startswith("WARNING:") or \
+                    "StatusConsoleListener" in line or line.endswith("INFO] "):
+                continue
+            self.log(f"[Bedrock] {line}")
+
+    def _stop_geyser(self) -> None:
+        gp, self._geyser = self._geyser, None
+        if gp and gp.poll() is None:
+            try:
+                gp.stdin.write("geyser stop\n")
+                gp.stdin.flush()
+                gp.wait(8)
+            except Exception:  # noqa: BLE001
+                gp.kill()
+
     def _waiter(self, proc) -> None:
         code = proc.wait()
+        self._stop_geyser()
         self.exit_code = code
         self.tracker.players.clear()
         for cb in [self.on_exit, *self.exit_listeners]:

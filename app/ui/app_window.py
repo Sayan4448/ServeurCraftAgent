@@ -22,46 +22,62 @@ class App(ctk.CTk):
         self.after(250, self._set_icon)
         from .uithread import install
         install(self)
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
 
-        header = ctk.CTkFrame(self, fg_color=theme.PANEL, corner_radius=0, height=56)
+        header = ctk.CTkFrame(self, fg_color=theme.PANEL, corner_radius=0,
+                              height=60, border_width=0)
         header.pack(fill="x")
         header.pack_propagate(False)
-        ctk.CTkLabel(
-            header, text="⛏  ServerCraft Agent",
-            font=(theme.FONT, 20, "bold"), text_color=theme.TEXT,
-        ).pack(side="left", padx=18)
-        ctk.CTkLabel(
-            header, text=t("header_sub"),
-            font=(theme.FONT, 12), text_color=theme.MUTED,
-        ).pack(side="left", padx=8)
+        logo = ctk.CTkLabel(header, text="⛏", width=38, height=38,
+                            corner_radius=10, fg_color=theme.ACCENT,
+                            text_color="#ffffff", font=(theme.FONT, 18))
+        logo.pack(side="left", padx=(18, 10))
+        titles = ctk.CTkFrame(header, fg_color="transparent")
+        titles.pack(side="left")
+        ctk.CTkLabel(titles, text="ServerCraft Agent",
+                     font=(theme.FONT, 17, "bold"), text_color=theme.TEXT,
+                     anchor="w").pack(anchor="w")
+        ctk.CTkLabel(titles, text=t("header_sub"), font=(theme.FONT, 11),
+                     text_color=theme.MUTED, anchor="w").pack(anchor="w")
         ctk.CTkButton(
-            header, text="⚙", width=40, height=34,
+            header, text="⚙  " + t("settings"), width=120, height=34,
             fg_color=theme.PANEL_2, hover_color=theme.HOVER,
-            font=(theme.FONT, 16),
+            text_color=theme.TEXT, font=(theme.FONT, 12),
             command=lambda: SettingsDialog(self),
-        ).pack(side="right", padx=14)
+        ).pack(side="right", padx=16)
+        self.theme_btn = ctk.CTkButton(
+            header, text="", width=38, height=34, fg_color=theme.PANEL_2,
+            hover_color=theme.HOVER, text_color=theme.TEXT,
+            font=(theme.FONT, 15), command=self._toggle_theme)
+        self.theme_btn.pack(side="right")
+        self._theme_icon()
+        ctk.CTkFrame(self, height=1, fg_color=theme.BORDER,
+                     corner_radius=0).pack(fill="x")
 
         self.tabview = ctk.CTkTabview(
             self, fg_color=theme.BG, corner_radius=10,
-            segmented_button_fg_color=theme.PANEL,
-            segmented_button_selected_color=theme.ACCENT,
-            segmented_button_selected_hover_color=theme.ACCENT_HOVER,
-            segmented_button_unselected_color=theme.PANEL,
+            segmented_button_fg_color=theme.PANEL_2,
+            segmented_button_selected_color=theme.SEL,
+            segmented_button_selected_hover_color=theme.SEL_HOVER,
+            segmented_button_unselected_color=theme.PANEL_2,
             segmented_button_unselected_hover_color=theme.HOVER,
-            anchor="nw",
+            text_color=theme.TEXT, anchor="nw",
         )
-        self.tabview.pack(fill="both", expand=True, padx=12, pady=(4, 12))
+        self.tabview.pack(fill="both", expand=True, padx=12, pady=(6, 12))
+        self.tabview._segmented_button.configure(
+            font=(theme.FONT, 13, "bold"), height=34)
 
         self.tabview.add(t("tab_servers"))
         self.tabview.add(t("tab_creator"))
 
-        self.servers_tab = ServersTab(self.tabview.tab(t("tab_servers")))
+        self.servers_tab = ServersTab(
+            self.tabview.tab(t("tab_servers")),
+            on_new=lambda: self.tabview.set(t("tab_creator")))
         self.servers_tab.pack(fill="both", expand=True)
 
         self.creator_tab = CreatorTab(
             self.tabview.tab(t("tab_creator")),
-            on_created=lambda meta: self.servers_tab.select_by_name(
-                meta["name"]),
+            on_created=self._server_created,
         )
         self.creator_tab.pack(fill="both", expand=True)
 
@@ -71,6 +87,41 @@ class App(ctk.CTk):
             self.tabview.add(t("tab_ai"))
             self.ai_tab = AiTab(self.tabview.tab(t("tab_ai")))
             self.ai_tab.pack(fill="both", expand=True)
+
+    def _on_close(self):
+        """Arrête proprement les serveurs (sinon java.exe reste orphelin)."""
+        from ..core import server_manager as sm
+        running = [p for p in sm.PROCESSES.values() if p.is_running()]
+        if running:
+            if not messagebox.askyesno(
+                    t("quit_title"), t("quit_running", n=len(running)),
+                    parent=self):
+                return
+            win = ctk.CTkToplevel(self)
+            win.title("ServerCraft Agent")
+            win.geometry("360x110")
+            win.configure(fg_color=theme.BG)
+            ctk.CTkLabel(win, text=t("quit_stopping"),
+                         font=(theme.FONT, 13), text_color=theme.TEXT).pack(
+                expand=True)
+            win.update()
+            sm.stop_all(timeout=40)
+        self.destroy()
+
+    def _server_created(self, meta):
+        self.servers_tab.select_by_name(meta["name"])
+        self.tabview.set(t("tab_servers"))
+
+    def _theme_icon(self):
+        self.theme_btn.configure(text="☀" if theme.is_dark() else "☾")
+
+    def _toggle_theme(self):
+        mode = "light" if theme.is_dark() else "dark"
+        theme.apply(mode)
+        s = load_settings()
+        s["theme"] = mode
+        save_settings(s)
+        self._theme_icon()
 
     def _set_icon(self):
         base = (Path(sys.executable).parent if getattr(sys, "frozen", False)
@@ -90,7 +141,7 @@ class SettingsDialog(ctk.CTkToplevel):
         super().__init__(master)
         self.settings = load_settings()
         self.title(t("settings"))
-        self.geometry("500x470")
+        self.geometry("540x540")
         self.configure(fg_color=theme.BG)
         self.transient(master)
         self.grab_set()
@@ -120,8 +171,8 @@ class SettingsDialog(ctk.CTkToplevel):
                      text_color=theme.MUTED).pack(side="left")
         self.theme_seg = ctk.CTkSegmentedButton(
             row, values=[t("theme_dark"), t("theme_light")],
-            selected_color=theme.ACCENT,
-            selected_hover_color=theme.ACCENT_HOVER,
+            selected_color=theme.SEL, text_color=theme.TEXT,
+            selected_hover_color=theme.SEL_HOVER,
             unselected_color=theme.PANEL_2,
             unselected_hover_color=theme.HOVER)
         self.theme_seg.set(
@@ -194,4 +245,7 @@ class SettingsDialog(ctk.CTkToplevel):
         self.settings["ai_beta"] = bool(self.ai_switch.get())
         self.settings["curseforge_api_key"] = self.cf_entry.get().strip()
         save_settings(self.settings)
+        theme.apply(self.settings["theme"])       # appliqué immédiatement
+        if hasattr(self.master, "_theme_icon"):
+            self.master._theme_icon()
         self.destroy()

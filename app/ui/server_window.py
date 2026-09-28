@@ -79,21 +79,25 @@ class ServerWindow(ctk.CTkToplevel):
                              pady=(10, 0))
         self.ip_lbl = ctk.CTkLabel(head, text="", font=(theme.FONT_MONO, 11),
                                    text_color=theme.MUTED, anchor="w")
-        self.ip_lbl.grid(row=1, column=0, sticky="w", padx=14, pady=(0, 10))
+        self.ip_lbl.grid(row=1, column=0, sticky="w", padx=14)
+        self.stats_lbl = ctk.CTkLabel(head, text="", font=(theme.FONT, 11),
+                                      text_color=theme.MUTED, anchor="w")
+        self.stats_lbl.grid(row=2, column=0, sticky="w", padx=14,
+                            pady=(0, 10))
 
         btns = ctk.CTkFrame(head, fg_color="transparent")
-        btns.grid(row=0, column=1, rowspan=2, sticky="e", padx=10)
+        btns.grid(row=0, column=1, rowspan=3, sticky="e", padx=10)
         bstyle = dict(height=32, width=110, font=(theme.FONT, 12, "bold"))
         self.start_btn = ctk.CTkButton(
             btns, text=t("srv_start"), fg_color=theme.GREEN,
-            hover_color="#16a34a", text_color="#06210f",
+            hover_color=theme.GREEN_HOVER, text_color=theme.ON_GREEN,
             command=self._start, **bstyle)
         self.stop_btn = ctk.CTkButton(
             btns, text=t("srv_stop"), fg_color=theme.RED,
-            hover_color="#b91c1c", command=self._stop, **bstyle)
+            hover_color=theme.RED_HOVER, command=self._stop, **bstyle)
         self.restart_btn = ctk.CTkButton(
             btns, text=t("srv_restart"), fg_color=theme.ORANGE,
-            hover_color="#b45309", command=self._restart, **bstyle)
+            hover_color=theme.ORANGE_HOVER, command=self._restart, **bstyle)
         self.settings_btn = ctk.CTkButton(
             btns, text=t("srv_settings"), fg_color=theme.PANEL_2,
             hover_color=theme.HOVER, text_color=theme.TEXT,
@@ -115,9 +119,9 @@ class ServerWindow(ctk.CTkToplevel):
             left, font=(theme.FONT_MONO, 12), fg_color=theme.CONSOLE_BG,
             text_color=theme.CONSOLE_TEXT, wrap="word", state="disabled")
         self.console.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 6))
-        self.console.tag_config("err", foreground="#f87171")
-        self.console.tag_config("warn", foreground="#fbbf24")
-        self.console.tag_config("info", foreground=theme.ACCENT)
+        self.console.tag_config("err", foreground=theme.c(("#dc2626", "#f87171")))
+        self.console.tag_config("warn", foreground=theme.c(("#b45309", "#fbbf24")))
+        self.console.tag_config("info", foreground=theme.c(theme.ACCENT))
 
         cmdrow = ctk.CTkFrame(left, fg_color="transparent")
         cmdrow.grid(row=2, column=0, sticky="ew", padx=12, pady=(0, 12))
@@ -171,10 +175,18 @@ class ServerWindow(ctk.CTkToplevel):
             if self._pending_heads:
                 self._apply_heads()
             self._tick_n += 1
-            if running and self._tick_n % 60 == 0:
-                self.proc.send("list")
+            if running:
+                self.proc.request_list()
             if self._tick_n % 20 == 0:
                 self._show_ip()
+            if self._tick_n % 7 == 0:
+                st = self.proc.stats()
+                limit = int(self.proc.meta.get("ram_mb", 4096)) / 1024
+                self.stats_lbl.configure(
+                    text=(f"RAM {st['ram_mb'] / 1024:.1f} / {limit:g} Go   ·   "
+                          f"CPU {st['cpu']:.0f} %   ·   "
+                          f"{theme.fmt_duration(st['uptime'])}")
+                    if st else "")
         except Exception:  # noqa: BLE001
             import traceback
             traceback.print_exc()
@@ -198,10 +210,12 @@ class ServerWindow(ctk.CTkToplevel):
             self.status_lbl.configure(
                 text=f"○  {self.name}  ·  {t('srv_stopped')}",
                 text_color=theme.MUTED)
-        self.start_btn.configure(
-            state="disabled" if running or starting else "normal")
-        self.stop_btn.configure(state="normal" if running else "disabled")
-        self.restart_btn.configure(state="normal" if running else "disabled")
+        theme.action_button(self.start_btn, not running and not starting,
+                            theme.GREEN, theme.GREEN_HOVER, theme.ON_GREEN)
+        theme.action_button(self.stop_btn, running, theme.RED,
+                            theme.RED_HOVER)
+        theme.action_button(self.restart_btn, running, theme.ORANGE,
+                            theme.ORANGE_HOVER)
 
     def _show_ip(self):
         port = self.proc.meta.get("port", 25565)
@@ -372,8 +386,8 @@ class ServerWindow(ctk.CTkToplevel):
                     pass
 
     def _player_menu(self, name, widget):
-        menu = tk.Menu(self, tearoff=0, bg=theme.PANEL_2, fg=theme.TEXT,
-                       activebackground=theme.ACCENT,
+        menu = tk.Menu(self, tearoff=0, bg=theme.c(theme.PANEL_2), fg=theme.c(theme.TEXT),
+                       activebackground=theme.c(theme.ACCENT),
                        activeforeground="#ffffff")
 
         def act(fn, *args):

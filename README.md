@@ -45,7 +45,15 @@ Temurin 21 est téléchargé dans `%LOCALAPPDATA%\ServerCraftAgent\runtimes`.
   l'app renseigne `voice_host` dans `voicechat-server.properties` et génère un
   récapitulatif copiable (`PLAYIT-README.txt`).
 
+### Cross-play Java + Bedrock
+Case « Cross-play » (créateur ou ⚙ Config) : l'app installe et configure
+seule **Geyser Standalone** (proxy Bedrock sur UDP 19132, lancé et arrêté avec
+le serveur), **Floodgate** (joueurs Bedrock sans compte Java), **ViaVersion +
+ViaBackwards**. Compatible avec les comptes Crack, Premium et Les deux. Pour
+jouer depuis Internet, ouvrez/tunnelisez aussi le port **UDP 19132**.
+
 ### Onglet « Mes Serveurs »
+- **Tableau de bord** : RAM utilisée / limite, CPU, joueurs, durée en ligne.
 - **Statut en direct** : « ● Lancé » (vert) / « ○ Arrêté » ; le bouton rouge
   « Arrêter » n'est actif que quand le serveur tourne.
 - **IP** affichée au-dessus de la console : IP locale (+ port) et IP publique
