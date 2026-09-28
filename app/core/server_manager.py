@@ -171,6 +171,9 @@ def create_server(options: dict, progress_cb=None, log=print) -> dict:
             "ram_mb": int(options.get("ram_mb", 4096)),
             "port": int(options.get("port", 25565)),
             "online_mode": bool(options.get("online_mode", False)),
+            "accounts": options.get("accounts",
+                                    "premium" if options.get("online_mode")
+                                    else "both"),
             "voice": voice,
             "jar": meta_jar,
             "launch_args": launch_args,

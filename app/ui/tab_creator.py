@@ -68,22 +68,21 @@ class CreatorTab(ctk.CTkFrame):
         label(5, t("cre_ram"))
         rambox = ctk.CTkFrame(form, fg_color="transparent")
         rambox.grid(row=5, column=1, sticky="ew", padx=16, pady=6)
-        rambox.grid_columnconfigure(0, weight=1)
-        self.ram_slider = ctk.CTkSlider(
-            rambox, from_=1024, to=16384, number_of_steps=30,
-            progress_color=theme.ACCENT, button_color=theme.ACCENT,
-            command=self._ram_changed)
-        self.ram_slider.set(4096)
-        self.ram_slider.grid(row=0, column=0, sticky="ew")
-        self.ram_label = ctk.CTkLabel(rambox, text="4 Go", width=60,
-                                    text_color=theme.TEXT)
-        self.ram_label.grid(row=0, column=1, padx=(10, 0))
+        self.ram_entry = ctk.CTkEntry(rambox, width=90, **entry_style)
+        self.ram_entry.insert(0, "4")
+        self.ram_entry.pack(side="left")
+        ctk.CTkLabel(rambox, text="Go", text_color=theme.MUTED).pack(
+            side="left", padx=6)
 
         label(6, t("cre_accounts"))
-        self.online_switch = ctk.CTkSwitch(
-            form, text=t("cre_online"),
-            text_color=theme.TEXT, progress_color=theme.ACCENT)
-        self.online_switch.grid(row=6, column=1, sticky="w", padx=16, pady=6)
+        self.accounts_seg = ctk.CTkSegmentedButton(
+            form, values=[t("acc_premium"), t("acc_crack"), t("acc_both")],
+            selected_color=theme.ACCENT,
+            selected_hover_color=theme.ACCENT_HOVER,
+            unselected_color=theme.PANEL_2,
+            unselected_hover_color=theme.HOVER)
+        self.accounts_seg.set(t("acc_both"))
+        self.accounts_seg.grid(row=6, column=1, sticky="w", padx=16, pady=6)
 
         # ------------------------------------------------------ voice chat
         sep1 = ctk.CTkFrame(form, height=1, fg_color=theme.BORDER)
@@ -164,11 +163,6 @@ class CreatorTab(ctk.CTkFrame):
         self._load_versions()
 
     # ----------------------------------------------------------------- helpers
-
-    def _ram_changed(self, v):
-        mb = int(v)
-        self.ram_label.configure(
-            text=f"{mb // 1024} Go" if mb % 1024 == 0 else f"{mb} Mo")
 
     def _toggle_playit(self):
         if self.playit_check.get():
@@ -251,13 +245,26 @@ class CreatorTab(ctk.CTkFrame):
                 "udp_port": self.playit_udp.get().strip() or "0",
             }
 
+        try:
+            ram_mb = int(float(self.ram_entry.get().replace(",", ".")) * 1024)
+            if ram_mb < 256:
+                raise ValueError
+        except ValueError:
+            messagebox.showwarning(t("cre_ram"), t("cre_bad_ram"))
+            return
+
+        acc_label = self.accounts_seg.get()
+        accounts = ("premium" if acc_label == t("acc_premium")
+                    else "crack" if acc_label == t("acc_crack") else "both")
+
         options = {
             "name": name,
             "loader": _LABEL_TO_LOADER[self.loader_menu.get()],
             "mc_version": version,
-            "ram_mb": int(self.ram_slider.get()),
+            "ram_mb": ram_mb,
             "port": port,
-            "online_mode": bool(self.online_switch.get()),
+            "online_mode": accounts == "premium",
+            "accounts": accounts,
             "voice": voice,
             "playit": playit,
         }

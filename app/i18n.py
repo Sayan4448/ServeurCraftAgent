@@ -1080,6 +1080,11 @@ STRINGS = {
 
 
 STRINGS["fr"].update({
+    "ss_ram": "RAM (Go)",
+    "acc_crack": "Crack uniquement",
+    "acc_both": "Les deux",
+    "acc_both_hint": "« Les deux » : le serveur accepte tout le monde (online-mode=false). Pour sécuriser les comptes crack, installez un plugin d'authentification (ex. AuthMe) depuis le gestionnaire de mods.",
+    "cre_bad_ram": "RAM invalide — entrez un nombre de Go (ex : 4).",
     "mp_import": "📦 Importer un modpack",
     "mp_pick": "Choisir un modpack (.zip)",
     "mp_analyzing": "Analyse du modpack…",
@@ -1094,6 +1099,11 @@ STRINGS["fr"].update({
     "mp_none": "Aucun .jar trouvé dans ce modpack.",
 })
 STRINGS["en"].update({
+    "ss_ram": "RAM (GB)",
+    "acc_crack": "Cracked only",
+    "acc_both": "Both",
+    "acc_both_hint": "\"Both\": the server accepts everyone (online-mode=false). To secure cracked accounts, install an auth plugin (e.g. AuthMe) from the mod manager.",
+    "cre_bad_ram": "Invalid RAM — enter a number of GB (e.g. 4).",
     "mp_import": "📦 Import a modpack",
     "mp_pick": "Choose a modpack (.zip)",
     "mp_analyzing": "Analyzing modpack…",
@@ -1108,6 +1118,11 @@ STRINGS["en"].update({
     "mp_none": "No .jar found in this modpack.",
 })
 STRINGS["ru"].update({
+    "ss_ram": "ОЗУ (ГБ)",
+    "acc_crack": "Только пиратка",
+    "acc_both": "Оба",
+    "acc_both_hint": "«Оба»: сервер принимает всех (online-mode=false). Для защиты поставьте плагин авторизации (напр. AuthMe) из менеджера модов.",
+    "cre_bad_ram": "Неверное ОЗУ — укажите ГБ (напр. 4).",
     "mp_import": "📦 Импорт модпака",
     "mp_pick": "Выберите модпак (.zip)",
     "mp_analyzing": "Анализ модпака…",
@@ -1122,6 +1137,11 @@ STRINGS["ru"].update({
     "mp_none": "В модпаке нет .jar файлов.",
 })
 STRINGS["ja"].update({
+    "ss_ram": "RAM (GB)",
+    "acc_crack": "非正規のみ",
+    "acc_both": "両方",
+    "acc_both_hint": "「両方」：誰でも接続可（online-mode=false）。非正規アカウントの保護に認証プラグイン（AuthMe等）をMOD管理から入れてください。",
+    "cre_bad_ram": "RAMが無効です — GB数を入力（例：4）。",
     "mp_import": "📦 モッドパックを導入",
     "mp_pick": "モッドパックを選択 (.zip)",
     "mp_analyzing": "モッドパックを解析中…",
@@ -1136,6 +1156,11 @@ STRINGS["ja"].update({
     "mp_none": "このモッドパックに .jar が見つかりません。",
 })
 STRINGS["es"].update({
+    "ss_ram": "RAM (GB)",
+    "acc_crack": "Solo no premium",
+    "acc_both": "Ambos",
+    "acc_both_hint": "«Ambos»: el servidor acepta a todos (online-mode=false). Para proteger las cuentas no premium, instala un plugin de autenticación (ej. AuthMe) desde el gestor de mods.",
+    "cre_bad_ram": "RAM inválida — indica los GB (ej.: 4).",
     "mp_import": "📦 Importar modpack",
     "mp_pick": "Elige un modpack (.zip)",
     "mp_analyzing": "Analizando modpack…",
@@ -1150,6 +1175,11 @@ STRINGS["es"].update({
     "mp_none": "No se encontró ningún .jar en el modpack.",
 })
 STRINGS["de"].update({
+    "ss_ram": "RAM (GB)",
+    "acc_crack": "Nur Crack",
+    "acc_both": "Beide",
+    "acc_both_hint": "„Beide“: der Server nimmt alle (online-mode=false). Zum Schutz von Crack-Konten ein Auth-Plugin (z. B. AuthMe) über den Mod-Manager installieren.",
+    "cre_bad_ram": "Ungültiger RAM — GB-Zahl eingeben (z. B. 4).",
     "mp_import": "📦 Modpack importieren",
     "mp_pick": "Modpack wählen (.zip)",
     "mp_analyzing": "Modpack wird analysiert…",

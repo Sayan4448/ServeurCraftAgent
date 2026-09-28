@@ -63,7 +63,8 @@ class ServerSettings(ctk.CTkToplevel):
         # -------------------------------------------------------- général
         self._section(scroll, t("ss_general"))
         self._field(scroll, t("ss_ram"), "ram",
-                    str(meta.get("ram_mb", 4096)))
+                    str(round(int(meta.get("ram_mb", 4096)) / 1024, 1)
+                        ).rstrip("0").rstrip("."))
         self._field(scroll, t("ss_port"), "port", str(meta.get("port", 25565)))
         self._field(scroll, t("ss_max_players"), "max_players",
                     self.props.get("max-players", "20"))
@@ -72,17 +73,24 @@ class ServerSettings(ctk.CTkToplevel):
         row.pack(fill="x", padx=4, pady=3)
         ctk.CTkLabel(row, text=t("ss_accounts"), width=170, anchor="w",
                      text_color=theme.MUTED).pack(side="left", padx=10)
+        acc_init = meta.get("accounts") or (
+            "premium" if self.props.get("online-mode") == "true" else "both")
         self.accounts_seg = ctk.CTkSegmentedButton(
-            row, values=[t("acc_mixed"), t("acc_premium")],
+            row, values=[t("acc_premium"), t("acc_crack"), t("acc_both")],
             selected_color=theme.ACCENT,
             selected_hover_color=theme.ACCENT_HOVER,
             unselected_color=theme.PANEL_2,
-            unselected_hover_color=theme.HOVER)
+            unselected_hover_color=theme.HOVER,
+            command=lambda _v: self._acc_hint_update())
         self.accounts_seg.set(
-            t("acc_premium")
-            if self.props.get("online-mode", "false") == "true"
-            else t("acc_mixed"))
+            {"premium": t("acc_premium"), "crack": t("acc_crack")}
+            .get(acc_init, t("acc_both")))
         self.accounts_seg.pack(side="left", padx=8, pady=8)
+        self.acc_hint = ctk.CTkLabel(
+            scroll, text=t("acc_both_hint"), font=(theme.FONT, 10),
+            text_color=theme.ORANGE, wraplength=480, justify="left")
+        self.acc_hint.pack(anchor="w", padx=10, pady=(0, 4))
+        self._acc_hint_update()
 
         # -------------------------------------------------------- gameplay
         self._section(scroll, t("ss_gameplay"))
@@ -174,6 +182,12 @@ class ServerSettings(ctk.CTkToplevel):
             w.pack(side="left", fill="x", expand=True, padx=8, pady=8)
         self._widgets[key] = w
 
+    def _acc_hint_update(self):
+        if self.accounts_seg.get() == t("acc_both"):
+            self.acc_hint.configure(text=t("acc_both_hint"))
+        else:
+            self.acc_hint.configure(text="")
+
     def _add_free(self):
         text = self.free_entry.get().strip()
         if "=" in text:
@@ -194,10 +208,11 @@ class ServerSettings(ctk.CTkToplevel):
                 changes[key] = w.get()
             else:
                 changes[key] = w.get().strip()
-        # comptes : premium seul = online-mode true ; premium+crack = false
-        changes["online-mode"] = (
-            "true" if self.accounts_seg.get() == t("acc_premium")
-            else "false")
+        # comptes : premium → online-mode true ; crack / les deux → false
+        acc_label = self.accounts_seg.get()
+        accounts = ("premium" if acc_label == t("acc_premium")
+                    else "crack" if acc_label == t("acc_crack") else "both")
+        changes["online-mode"] = "true" if accounts == "premium" else "false"
         changes["server-port"] = self._widgets["port"].get().strip() or "25565"
         changes["max-players"] = (
             self._widgets["max_players"].get().strip() or "20")
@@ -209,7 +224,13 @@ class ServerSettings(ctk.CTkToplevel):
             return
 
         # métadonnées (RAM + port pour le lancement)
-        self.meta["ram_mb"] = int(self._widgets["ram"].get() or 4096)
+        try:
+            self.meta["ram_mb"] = int(
+                float(self._widgets["ram"].get().replace(",", ".")) * 1024)
+        except ValueError:
+            self.meta["ram_mb"] = 4096
+        self.meta["accounts"] = accounts
+        self.meta["online_mode"] = accounts == "premium"
         self.meta["port"] = int(changes["server-port"])
         (self.dir / sm.META_FILE).write_text(
             json.dumps({k: v for k, v in self.meta.items()
