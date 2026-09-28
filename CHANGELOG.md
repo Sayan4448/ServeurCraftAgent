@@ -1,5 +1,21 @@
 # Versions — ServerCraft Agent
 
+## v0.10.0 — Release (2026-09-28)
+
+**Suppression de toutes les fonctionnalités IA** (agent, providers, modération
+autonome) — l'application se concentre sur la gestion de serveurs.
+
+**Nouveau**
+- **Interface serveur** : fenêtre d'administration qui s'ouvre au lancement
+  (activable dans ⚙ Paramètres) — console complète + joueurs en ligne avec
+  **tête de skin** (Minotar), pseudo et **grade** ; catégories « Admins / OP »
+  et « Joueurs », op/deop en un clic, grades persistés dans `ranks.json`
+- **Gestionnaire de mods façon ATLauncher/Prism** : fiche détaillée au clic
+  (description complète, galerie d'images, catégories), bouton **« Ouvrir la
+  page »**, versions compatibles avec installation individuelle
+- **Traduction Français / English** (⚙ Paramètres, appliquée au redémarrage)
+- Dialog **Paramètres** : langue, interface serveur, clé API CurseForge
+
 ## v0.4.0 — Release (2026-09-25)
 
 **Agent IA**

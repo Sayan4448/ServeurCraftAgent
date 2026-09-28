@@ -1,6 +1,7 @@
-"""Fenêtre 'Mods & Plugins' : navigation Modrinth/CurseForge avec icônes,
-descriptions, pagination et choix de version."""
+"""Fenêtre 'Mods & Plugins' : navigation Modrinth/CurseForge style ATLauncher —
+icônes, descriptions, galerie, choix de version, lien vers la page du projet."""
 import threading
+import webbrowser
 from io import BytesIO
 from pathlib import Path
 from tkinter import messagebox
@@ -12,6 +13,7 @@ from PIL import Image
 from ..config import load_settings, save_settings
 from ..core import mods as mods_mod
 from ..core.downloader import LOADER_LABELS
+from ..i18n import t
 from . import theme
 
 PAGE_SIZE = 20
@@ -37,8 +39,8 @@ class ModsManager(ctk.CTkToplevel):
         self._icon_cache = {}
 
         loader_label = LOADER_LABELS.get(meta["loader"], meta["loader"])
-        self.title(f"Mods & Plugins — {meta['name']} ({meta['mc_version']})")
-        self.geometry("860x700")
+        self.title(t("mods_title", name=meta["name"], mc=meta["mc_version"]))
+        self.geometry("880x720")
         self.configure(fg_color=theme.BG)
         self.transient(master)
 
@@ -85,19 +87,19 @@ class ModsManager(ctk.CTkToplevel):
         self.kind_seg.pack(side="left", padx=6, pady=10)
 
         self.search_entry = ctk.CTkEntry(
-            ctrl, placeholder_text="Rechercher (ex: jei, luckperms, voice chat)…",
+            ctrl, placeholder_text=t("mods_search_ph"),
             fg_color=theme.PANEL_2, border_color=theme.BORDER,
             text_color=theme.TEXT, width=220)
         self.search_entry.pack(side="left", padx=10)
         self.search_entry.bind("<Return>", lambda e: self._search(reset=True))
-        ctk.CTkButton(ctrl, text="Rechercher", width=100,
+        ctk.CTkButton(ctrl, text=t("mods_search"), width=100,
                       fg_color=theme.ACCENT, hover_color=theme.ACCENT_HOVER,
                       command=lambda: self._search(reset=True),
                       ).pack(side="left", padx=4, pady=10)
 
         # clé CurseForge (affichée seulement si source=CurseForge)
         self.cf_box = ctk.CTkFrame(ctrl, fg_color="transparent")
-        ctk.CTkLabel(self.cf_box, text="Clé CurseForge",
+        ctk.CTkLabel(self.cf_box, text=t("mods_cf_key"),
                      text_color=theme.MUTED, font=(theme.FONT, 11),
                      ).pack(side="left", padx=(10, 4))
         self.cf_key = ctk.CTkEntry(
@@ -114,14 +116,14 @@ class ModsManager(ctk.CTkToplevel):
         body.grid_rowconfigure(1, weight=3)
         body.grid_rowconfigure(3, weight=2)
 
-        ctk.CTkLabel(body, text="Parcourir", font=(theme.FONT, 13, "bold"),
+        ctk.CTkLabel(body, text=t("mods_browse"), font=(theme.FONT, 13, "bold"),
                      text_color=theme.TEXT).grid(
             row=0, column=0, sticky="w", pady=(2, 4))
         self.results_frame = ctk.CTkScrollableFrame(body, fg_color=theme.PANEL,
                                                   corner_radius=10)
         self.results_frame.grid(row=1, column=0, sticky="nsew")
 
-        ctk.CTkLabel(body, text="Installés sur ce serveur",
+        ctk.CTkLabel(body, text=t("mods_installed"),
                      font=(theme.FONT, 13, "bold"),
                      text_color=theme.TEXT).grid(
             row=2, column=0, sticky="w", pady=(8, 4))
@@ -155,9 +157,9 @@ class ModsManager(ctk.CTkToplevel):
         self.settings["curseforge_api_key"] = self.cf_key.get().strip()
         save_settings(self.settings)
 
-    # ------------------------------------------------------------- icônes
+    # ------------------------------------------------------------ icônes
 
-    def _load_icon(self, url: str, label):
+    def _load_icon(self, url: str, label, size=(44, 44)):
         if not url:
             return
         if url in self._icon_cache:
@@ -168,8 +170,7 @@ class ModsManager(ctk.CTkToplevel):
             try:
                 data = requests.get(url, timeout=10).content
                 img = Image.open(BytesIO(data)).convert("RGBA")
-                cimg = ctk.CTkImage(light_image=img, dark_image=img,
-                                    size=(44, 44))
+                cimg = ctk.CTkImage(light_image=img, dark_image=img, size=size)
                 self._icon_cache[url] = cimg
                 self.after(0, lambda: label.configure(image=cimg, text=""))
             except Exception:
@@ -188,7 +189,7 @@ class ModsManager(ctk.CTkToplevel):
             for w in self.results_frame.winfo_children():
                 w.destroy()
         self._busy = True
-        self._set_status("Recherche…")
+        self._set_status(t("mods_searching"))
         query = self._last_query
         source = self.source_seg.get()
         kind = self._kind()
@@ -208,7 +209,7 @@ class ModsManager(ctk.CTkToplevel):
                         kind, limit=PAGE_SIZE, offset=offset)
                 self.after(0, self._show_results, res)
             except Exception as e:
-                self.after(0, self._set_status, f"Erreur : {e}")
+                self.after(0, self._set_status, t("mods_error", e=e))
             finally:
                 self._busy = False
 
@@ -216,16 +217,16 @@ class ModsManager(ctk.CTkToplevel):
 
     def _show_results(self, results):
         self._offset += len(results)
-        self._set_status(f"{self._offset} résultat(s) affiché(s)")
+        self._set_status(t("mods_results", n=self._offset))
         if not results and self._offset == 0:
-            ctk.CTkLabel(self.results_frame, text="Aucun résultat.",
+            ctk.CTkLabel(self.results_frame, text=t("mods_no_result"),
                          text_color=theme.MUTED).pack(pady=12)
             return
         for r in results:
             self._add_result_card(r)
         if len(results) >= PAGE_SIZE:
             ctk.CTkButton(
-                self.results_frame, text="Charger plus…", height=30,
+                self.results_frame, text=t("mods_load_more"), height=30,
                 fg_color=theme.PANEL_2, hover_color=theme.HOVER,
                 text_color=theme.TEXT, command=self._search,
             ).pack(pady=8)
@@ -250,22 +251,26 @@ class ModsManager(ctk.CTkToplevel):
             anchor="w").pack(anchor="w")
         ctk.CTkLabel(
             info, text=r["description"], font=(theme.FONT, 11),
-            text_color=theme.MUTED, anchor="w", wraplength=560,
+            text_color=theme.MUTED, anchor="w", wraplength=520,
             justify="left").pack(anchor="w")
+
+        # clic sur la carte → fiche détaillée
+        for w in (card, icon_lbl, info):
+            w.bind("<Button-1>", lambda e, res=r: ModDetailDialog(self, res))
 
         btns = ctk.CTkFrame(card, fg_color="transparent")
         btns.pack(side="right", padx=8, pady=8)
         inst = ctk.CTkButton(
-            btns, text="Installer", width=110, height=30,
+            btns, text=t("mods_install"), width=110, height=30,
             fg_color=theme.GREEN, hover_color="#16a34a",
             text_color="#06210f")
         inst.configure(command=lambda b=inst, res=r: self._install_latest(res, b))
         inst.pack(pady=(0, 6))
         ctk.CTkButton(
-            btns, text="Versions ▾", width=110, height=30,
+            btns, text=t("mods_details"), width=110, height=30,
             fg_color=theme.PANEL, hover_color=theme.HOVER,
             text_color=theme.TEXT,
-            command=lambda res=r: VersionsDialog(self, res)).pack()
+            command=lambda res=r: ModDetailDialog(self, res)).pack()
 
     # ------------------------------------------------------------ install
 
@@ -274,7 +279,7 @@ class ModsManager(ctk.CTkToplevel):
             return
         self._busy = True
         btn.configure(state="disabled", text="…")
-        self._set_status(f"Installation de {result['title']}…")
+        self._set_status(t("mods_installing", name=result["title"]))
         self._save_cf_key()
         api_key = self.cf_key.get().strip()
 
@@ -284,14 +289,16 @@ class ModsManager(ctk.CTkToplevel):
                     result, self.server_dir, self.meta["loader"],
                     self.meta["mc_version"], api_key=api_key)
                 self.after(0, lambda: self._set_status(
-                    f"✔ {path.name} installé dans {path.parent.name}/"))
+                    t("mods_installed_in", file=path.name,
+                      dir=path.parent.name)))
                 self.after(0, self._refresh_installed)
-                self.after(0, lambda: btn.configure(text="✔ Installé"))
+                self.after(0, lambda: btn.configure(
+                    text=t("mods_installed_btn")))
             except Exception as e:
                 self.after(0, lambda: self._set_status(
-                    f"✖ {result['title']} : {e}"))
-                self.after(0, lambda: btn.configure(state="normal",
-                                                    text="Installer"))
+                    t("mods_error", e=f"{result['title']} : {e}")))
+                self.after(0, lambda: btn.configure(
+                    state="normal", text=t("mods_install")))
             finally:
                 self._busy = False
 
@@ -302,7 +309,7 @@ class ModsManager(ctk.CTkToplevel):
             return
         self._busy = True
         btn.configure(state="disabled", text="…")
-        self._set_status(f"Téléchargement {version['filename']}…")
+        self._set_status(f"⬇ {version['filename']}…")
 
         def work():
             try:
@@ -310,13 +317,14 @@ class ModsManager(ctk.CTkToplevel):
                     version["url"], version["filename"], self.server_dir,
                     self.meta["loader"], result["kind"])
                 self.after(0, lambda: self._set_status(
-                    f"✔ {path.name} installé dans {path.parent.name}/"))
+                    t("mods_installed_in", file=path.name,
+                      dir=path.parent.name)))
                 self.after(0, self._refresh_installed)
                 self.after(0, lambda: btn.configure(text="✔"))
             except Exception as e:
-                self.after(0, lambda: self._set_status(f"✖ {e}"))
-                self.after(0, lambda: btn.configure(state="normal",
-                                                    text="Installer"))
+                self.after(0, lambda: self._set_status(t("mods_error", e=e)))
+                self.after(0, lambda: btn.configure(
+                    state="normal", text=t("mods_install")))
             finally:
                 self._busy = False
 
@@ -329,7 +337,7 @@ class ModsManager(ctk.CTkToplevel):
             w.destroy()
         items = mods_mod.list_installed(self.server_dir, self.meta["loader"])
         if not items:
-            ctk.CTkLabel(self.installed_frame, text="Rien d'installé.",
+            ctk.CTkLabel(self.installed_frame, text=t("mods_none_installed"),
                          text_color=theme.MUTED).pack(pady=10)
             return
         for it in items:
@@ -345,73 +353,146 @@ class ModsManager(ctk.CTkToplevel):
                          font=(theme.FONT, 11), text_color=theme.TEXT,
                          ).pack(side="left", padx=6, pady=6)
             ctk.CTkButton(
-                row, text="Supprimer", width=80, height=26,
+                row, text=t("mods_del"), width=80, height=26,
                 fg_color=theme.RED, hover_color="#b91c1c",
                 command=lambda p=it["path"]: self._remove(p),
             ).pack(side="right", padx=8)
 
     def _remove(self, path):
         name = Path(path).name
-        if messagebox.askyesno("Supprimer", f"Supprimer {name} ?", parent=self):
+        if messagebox.askyesno(t("mods_del"),
+                               t("mods_del_confirm", name=name), parent=self):
             mods_mod.remove_installed(path)
             self._refresh_installed()
 
 
-class VersionsDialog(ctk.CTkToplevel):
-    """Liste toutes les versions compatibles d'un projet + bouton installer."""
+class ModDetailDialog(ctk.CTkToplevel):
+    """Fiche projet style ATLauncher : icône, description complète, galerie,
+    lien vers la page, et liste des versions compatibles avec installation."""
 
     def __init__(self, manager: ModsManager, result: dict):
         super().__init__(manager)
         self.manager = manager
         self.result = result
-        self.title(f"Versions — {result['title']}")
-        self.geometry("640x480")
+        self._gallery_imgs = []
+        self.title(result["title"])
+        self.geometry("720x640")
         self.configure(fg_color=theme.BG)
         self.transient(manager)
 
-        ctk.CTkLabel(
-            self, text=result["title"], font=(theme.FONT, 15, "bold"),
-            text_color=theme.TEXT).pack(anchor="w", padx=16, pady=(14, 2))
-        ctk.CTkLabel(
-            self, text=f"{result['author']} · {result['description']}",
-            font=(theme.FONT, 11), text_color=theme.MUTED, wraplength=600,
-            justify="left").pack(anchor="w", padx=16, pady=(0, 8))
+        scroll = ctk.CTkScrollableFrame(self, fg_color=theme.BG)
+        scroll.pack(fill="both", expand=True, padx=10, pady=10)
 
-        self.frame = ctk.CTkScrollableFrame(self, fg_color=theme.PANEL,
-                                          corner_radius=10)
-        self.frame.pack(fill="both", expand=True, padx=16, pady=(0, 8))
-        self.status = ctk.CTkLabel(self, text="Chargement des versions…",
-                                   text_color=theme.MUTED, font=(theme.FONT, 11))
-        self.status.pack(anchor="w", padx=16, pady=(0, 10))
-        self._load()
+        # ------------------------------------------------------------- tête
+        head = ctk.CTkFrame(scroll, fg_color=theme.PANEL, corner_radius=10)
+        head.pack(fill="x", padx=4, pady=4)
+        self.icon_lbl = ctk.CTkLabel(head, text="…", width=72, height=72,
+                                     fg_color=theme.PANEL_2, corner_radius=10)
+        self.icon_lbl.pack(side="left", padx=12, pady=12)
+        self.manager._load_icon(result.get("icon", ""), self.icon_lbl,
+                                size=(72, 72))
+        info = ctk.CTkFrame(head, fg_color="transparent")
+        info.pack(side="left", fill="x", expand=True, padx=4, pady=10)
+        ctk.CTkLabel(info, text=result["title"],
+                     font=(theme.FONT, 16, "bold"),
+                     text_color=theme.TEXT, anchor="w").pack(anchor="w")
+        self.meta_lbl = ctk.CTkLabel(
+            info, text=f"{result['author']} · ⬇ {_fmt(result['downloads'])}",
+            font=(theme.FONT, 11), text_color=theme.ACCENT, anchor="w")
+        self.meta_lbl.pack(anchor="w")
+        self.tags_lbl = ctk.CTkLabel(info, text="", font=(theme.FONT, 10),
+                                     text_color=theme.MUTED, anchor="w")
+        self.tags_lbl.pack(anchor="w", pady=(2, 0))
 
-    def _load(self):
+        btns = ctk.CTkFrame(head, fg_color="transparent")
+        btns.pack(side="right", padx=12)
+        url = result.get("url", "")
+        if url:
+            ctk.CTkButton(
+                btns, text=t("mods_open_page"), width=150, height=30,
+                fg_color=theme.PANEL_2, hover_color=theme.HOVER,
+                text_color=theme.TEXT,
+                command=lambda: webbrowser.open(url)).pack(pady=3)
+        inst = ctk.CTkButton(
+            btns, text=t("mods_install"), width=150, height=30,
+            fg_color=theme.GREEN, hover_color="#16a34a",
+            text_color="#06210f")
+        inst.configure(command=lambda b=inst:
+                       manager._install_latest(result, b))
+        inst.pack(pady=3)
+
+        # ---------------------------------------------------- description
+        self.desc_box = ctk.CTkTextbox(
+            scroll, font=(theme.FONT, 12), fg_color=theme.PANEL,
+            text_color=theme.TEXT, wrap="word", height=180,
+            state="normal")
+        self.desc_box.insert("1.0", result["description"])
+        self.desc_box.configure(state="disabled")
+        self.desc_box.pack(fill="x", padx=4, pady=4)
+
+        # ---------------------------------------------------------- galerie
+        self.gallery_frame = ctk.CTkFrame(scroll, fg_color="transparent")
+        self.gallery_frame.pack(fill="x", padx=4, pady=4)
+
+        # --------------------------------------------------------- versions
+        ctk.CTkLabel(scroll, text=t("mods_versions_tab"),
+                     font=(theme.FONT, 13, "bold"),
+                     text_color=theme.TEXT).pack(anchor="w", padx=8, pady=(8, 2))
+        self.versions_frame = ctk.CTkFrame(scroll, fg_color=theme.PANEL,
+                                           corner_radius=10)
+        self.versions_frame.pack(fill="x", padx=4, pady=(0, 6))
+        self.vstatus = ctk.CTkLabel(
+            self, text=t("mods_versions_loading"), text_color=theme.MUTED,
+            font=(theme.FONT, 11))
+        self.vstatus.pack(anchor="w", padx=16, pady=(0, 8))
+        self._load_details()
+
+    def _load_details(self):
+        api_key = self.manager.cf_key.get().strip()
+
         def work():
+            details = {}
+            try:
+                details = mods_mod.project_details(self.result, api_key)
+            except Exception:
+                pass
             try:
                 versions = mods_mod.version_list(
                     self.result, self.manager.meta["loader"],
-                    self.manager.meta["mc_version"],
-                    self.manager.cf_key.get().strip())
+                    self.manager.meta["mc_version"], api_key)
             except Exception as e:
-                self.after(0, lambda: self.status.configure(
-                    text=f"Erreur : {e}"))
-                return
-            self.after(0, self._show, versions)
+                self.after(0, lambda: self.vstatus.configure(
+                    text=t("mods_error", e=e)))
+                versions = []
+            self.after(0, self._populate, details, versions)
 
         threading.Thread(target=work, daemon=True).start()
 
-    def _show(self, versions):
-        self.status.configure(
-            text=f"{len(versions)} version(s) compatible(s) "
-                 f"{self.manager.meta['mc_version']} — la plus récente en haut")
+    def _populate(self, details, versions):
+        if details.get("body"):
+            self.desc_box.configure(state="normal")
+            self.desc_box.delete("1.0", "end")
+            self.desc_box.insert("1.0", details["body"][:8000])
+            self.desc_box.configure(state="disabled")
+        if details.get("icon"):
+            self.manager._load_icon(details["icon"], self.icon_lbl,
+                                    size=(72, 72))
+        tags = details.get("categories") or []
+        if tags:
+            self.tags_lbl.configure(text=" · ".join(tags[:8]))
+        for url in details.get("gallery", []):
+            self._gallery_thumb(url)
+        mc = self.manager.meta["mc_version"]
+        self.vstatus.configure(
+            text=t("mods_versions_count", n=len(versions), mc=mc))
         if not versions:
-            ctk.CTkLabel(self.frame, text="Aucune version compatible.",
-                         text_color=theme.MUTED).pack(pady=16)
+            ctk.CTkLabel(self.versions_frame, text=t("mods_no_compat"),
+                         text_color=theme.MUTED).pack(pady=14)
             return
         for v in versions:
-            row = ctk.CTkFrame(self.frame, fg_color=theme.PANEL_2,
+            row = ctk.CTkFrame(self.versions_frame, fg_color=theme.PANEL_2,
                                corner_radius=8)
-            row.pack(fill="x", padx=4, pady=3)
+            row.pack(fill="x", padx=6, pady=3)
             info = ctk.CTkFrame(row, fg_color="transparent")
             info.pack(side="left", fill="x", expand=True, padx=10, pady=5)
             badge = v["release_type"]
@@ -420,13 +501,37 @@ class VersionsDialog(ctk.CTkToplevel):
                          font=(theme.FONT, 12, "bold"), text_color=theme.TEXT,
                          anchor="w").pack(anchor="w")
             ctk.CTkLabel(
-                info, text=f"{badge} · {v['date']} · MC {v['game_versions']}",
+                info,
+                text=f"{badge} · {v['date']} · MC {v['game_versions']}",
                 font=(theme.FONT, 10), text_color=color, anchor="w",
             ).pack(anchor="w")
             btn = ctk.CTkButton(
-                row, text="Installer", width=90, height=28,
+                row, text=t("mods_install"), width=90, height=28,
                 fg_color=theme.GREEN, hover_color="#16a34a",
                 text_color="#06210f")
             btn.configure(command=lambda b=btn, ver=v:
                           self.manager._install_version(self.result, ver, b))
             btn.pack(side="right", padx=10)
+
+    def _gallery_thumb(self, url):
+        holder = ctk.CTkLabel(self.gallery_frame, text="", width=120,
+                              height=70, fg_color=theme.PANEL,
+                              corner_radius=8)
+        holder.pack(side="left", padx=4, pady=4)
+
+        def work():
+            try:
+                data = requests.get(url, timeout=10).content
+                img = Image.open(BytesIO(data)).convert("RGBA")
+                img.thumbnail((240, 140))
+                cimg = ctk.CTkImage(light_image=img, dark_image=img,
+                                    size=img.size)
+                self._gallery_imgs.append(cimg)  # garde la référence
+                self.after(0, lambda: holder.configure(
+                    image=cimg, text="", cursor="hand2"))
+                holder.bind("<Button-1>",
+                            lambda e, u=url: webbrowser.open(u))
+            except Exception:
+                holder.pack_forget()
+
+        threading.Thread(target=work, daemon=True).start()

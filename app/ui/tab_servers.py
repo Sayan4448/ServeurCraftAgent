@@ -10,11 +10,14 @@ from tkinter import messagebox
 
 import customtkinter as ctk
 
+from ..config import load_settings
 from ..core import players as pl
 from ..core import server_manager as sm
 from ..core.downloader import LOADER_LABELS
+from ..i18n import t
 from . import theme
 from .mods_manager import ModsManager
+from .server_window import ServerWindow
 
 
 class ServersTab(ctk.CTkFrame):
@@ -38,7 +41,7 @@ class ServersTab(ctk.CTkFrame):
 
         head = ctk.CTkFrame(left, fg_color="transparent")
         head.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 4))
-        ctk.CTkLabel(head, text="Mes serveurs", font=(theme.FONT, 15, "bold"),
+        ctk.CTkLabel(head, text=t("srv_my"), font=(theme.FONT, 15, "bold"),
                      text_color=theme.TEXT).pack(side="left")
         ctk.CTkButton(head, text="⟳", width=34, fg_color=theme.PANEL_2,
                       hover_color=theme.HOVER, command=self.refresh).pack(side="right")
@@ -55,7 +58,7 @@ class ServersTab(ctk.CTkFrame):
         toolbar = ctk.CTkFrame(right, fg_color="transparent")
         toolbar.grid(row=0, column=0, sticky="ew", padx=12, pady=(10, 4))
         self.sel_label = ctk.CTkLabel(
-            toolbar, text="Aucun serveur sélectionné",
+            toolbar, text=t("srv_none_sel"),
             font=(theme.FONT, 14, "bold"), text_color=theme.TEXT,
         )
         self.sel_label.pack(side="left")
@@ -63,21 +66,21 @@ class ServersTab(ctk.CTkFrame):
         btn = dict(fg_color=theme.PANEL_2, hover_color=theme.HOVER,
                    text_color=theme.TEXT, height=30, width=90)
         self.btn_delete = ctk.CTkButton(
-            toolbar, text="Supprimer", fg_color=theme.RED,
+            toolbar, text=t("srv_delete"), fg_color=theme.RED,
             hover_color="#b91c1c", height=30, width=90,
             command=self.delete_selected)
         self.btn_delete.pack(side="right", padx=(6, 0))
-        ctk.CTkButton(toolbar, text="🧩 Mods/Plugins", command=self.open_mods,
+        ctk.CTkButton(toolbar, text=t("srv_mods"), command=self.open_mods,
                       **btn).pack(side="right", padx=6)
-        ctk.CTkButton(toolbar, text="Dossier", command=self.open_folder,
+        ctk.CTkButton(toolbar, text=t("srv_folder"), command=self.open_folder,
                       **btn).pack(side="right", padx=6)
-        ctk.CTkButton(toolbar, text="Redémarrer", command=self.restart_selected,
+        ctk.CTkButton(toolbar, text=t("srv_restart"), command=self.restart_selected,
                       **btn).pack(side="right", padx=6)
         self.btn_stop = ctk.CTkButton(
-            toolbar, text="Arrêter", command=self.stop_selected, **btn)
+            toolbar, text=t("srv_stop"), command=self.stop_selected, **btn)
         self.btn_stop.pack(side="right", padx=6)
         self.btn_start = ctk.CTkButton(
-            toolbar, text="▶ Lancer", fg_color=theme.GREEN,
+            toolbar, text=t("srv_start"), fg_color=theme.GREEN,
             hover_color="#16a34a", text_color="#06210f",
             height=30, width=90, command=self.start_selected)
         self.btn_start.pack(side="right")
@@ -95,11 +98,11 @@ class ServersTab(ctk.CTkFrame):
         cmdrow.grid(row=2, column=0, sticky="ew", padx=12, pady=(4, 10))
         cmdrow.grid_columnconfigure(0, weight=1)
         self.cmd_entry = ctk.CTkEntry(
-            cmdrow, placeholder_text="Commande console (ex: say Bonjour, op pseudo)…",
+            cmdrow, placeholder_text=t("srv_cmd_ph"),
             fg_color=theme.PANEL_2, border_color=theme.BORDER, text_color=theme.TEXT)
         self.cmd_entry.grid(row=0, column=0, sticky="ew", padx=(0, 8))
         self.cmd_entry.bind("<Return>", lambda e: self.send_command())
-        ctk.CTkButton(cmdrow, text="Envoyer", width=90, fg_color=theme.ACCENT,
+        ctk.CTkButton(cmdrow, text=t("srv_send"), width=90, fg_color=theme.ACCENT,
                       hover_color=theme.ACCENT_HOVER,
                       command=self.send_command).grid(row=0, column=1)
 
@@ -111,7 +114,7 @@ class ServersTab(ctk.CTkFrame):
         players_panel.grid_rowconfigure(1, weight=1)
 
         self.players_header = ctk.CTkLabel(
-            players_panel, text="Joueurs en ligne (0)",
+            players_panel, text=t("players_online", n=0),
             font=(theme.FONT, 13, "bold"), text_color=theme.TEXT)
         self.players_header.grid(row=0, column=0, sticky="w", padx=12, pady=10)
 
@@ -134,7 +137,7 @@ class ServersTab(ctk.CTkFrame):
         if not servers:
             ctk.CTkLabel(
                 self.list_frame,
-                text="Aucun serveur.\nCréez-en un dans l'onglet « Créateur Rapide ».",
+                text=t("srv_empty"),
                 text_color=theme.MUTED, justify="left",
             ).pack(padx=10, pady=20, anchor="w")
             return
@@ -221,10 +224,10 @@ class ServersTab(ctk.CTkFrame):
         players = sorted(self.player_sets.get(self.selected, set()),
                          key=str.lower)
         self.players_header.configure(
-            text=f"Joueurs en ligne ({len(players)})")
+            text=t("players_online", n=len(players)))
         if not players:
             ctk.CTkLabel(self.players_frame,
-                         text="Aucun joueur connecté.",
+                         text=t("no_players"),
                          text_color=theme.MUTED,
                          font=(theme.FONT, 11)).pack(pady=12)
             return
@@ -253,34 +256,34 @@ class ServersTab(ctk.CTkFrame):
                 self._append(ok, "warn")
 
         menu.add_command(
-            label="💬 Message privé…",
+            label=t("pm_msg"),
             command=lambda: self._player_message(proc, name))
         menu.add_separator()
         menu.add_command(
-            label="👢 Kick",
+            label=t("kick"),
             command=lambda: act(pl.kick, name, "Expulsé par l'admin",
                                 ok=f"kick {name}"))
         menu.add_command(
-            label="🔨 Bannir",
+            label=t("ban"),
             command=lambda: act(pl.ban, name, "Banni par l'admin",
                                 ok=f"ban {name}"))
         menu.add_command(
-            label="🕊 Pardon (unban)",
+            label=t("unban"),
             command=lambda: act(pl.pardon, name, ok=f"pardon {name}"))
         menu.add_separator()
-        menu.add_command(label="⭐ Op",
+        menu.add_command(label=t("op"),
                          command=lambda: act(pl.op, name, ok=f"op {name}"))
-        menu.add_command(label="➖ Deop",
+        menu.add_command(label=t("deop"),
                          command=lambda: act(pl.deop, name,
                                              ok=f"deop {name}"))
         menu.add_separator()
         for mode in ("survival", "creative", "adventure", "spectator"):
             menu.add_command(
-                label=f"Gamemode {mode}",
+                label=t("gamemode", mode=mode),
                 command=lambda m=mode: act(pl.gamemode, name, m,
                                            ok=f"gamemode {m} {name}"))
         menu.add_separator()
-        menu.add_command(label="💀 Tuer",
+        menu.add_command(label=t("kill"),
                          command=lambda: act(pl.kill, name,
                                              ok=f"kill {name}"))
         try:
@@ -290,8 +293,8 @@ class ServersTab(ctk.CTkFrame):
             menu.grab_release()
 
     def _player_message(self, proc, name: str):
-        dlg = ctk.CTkInputDialog(text=f"Message privé à {name} :",
-                                 title="Message")
+        dlg = ctk.CTkInputDialog(text=t("pm_to", name=name),
+                                 title=t("pm_title"))
         text = dlg.get_input()
         if text:
             pl.message(proc, name, text)
@@ -321,7 +324,7 @@ class ServersTab(ctk.CTkFrame):
                         self._append(text)
                 elif kind == "exit":
                     if name == self.selected:
-                        self._append(f"── Processus terminé (code {text}) ──", "warn")
+                        self._append(t("srv_proc_end", code=text), "warn")
                     self.refresh()
         except queue.Empty:
             pass
@@ -356,15 +359,17 @@ class ServersTab(ctk.CTkFrame):
         try:
             proc.start(on_line=lambda n, l: self._enqueue("line", n, l),
                        on_exit=lambda n, c: self._enqueue("exit", n, c))
-            self._append(f"── Démarrage de {name} ──", "ok")
+            self._append(t("srv_starting", name=name), "ok")
             self.refresh()
+            if load_settings().get("server_interface", True):
+                ServerWindow.open(self.winfo_toplevel(), name)
         except Exception as e:
-            messagebox.showerror("Démarrage impossible", str(e))
+            messagebox.showerror(t("srv_start_err"), str(e))
 
     def stop_selected(self):
         if self.selected:
             sm.get_process(self.selected).stop()
-            self._append("── Arrêt demandé (stop) ──", "warn")
+            self._append(t("srv_stop_req"), "warn")
 
     def restart_selected(self):
         if self.selected:
@@ -377,7 +382,7 @@ class ServersTab(ctk.CTkFrame):
         if sm.get_process(self.selected).send(cmd):
             self._append(f"> {cmd}")
         else:
-            self._append("Serveur non lancé.", "err")
+            self._append(t("srv_not_running"), "err")
         self.cmd_entry.delete(0, "end")
 
     def open_mods(self):
@@ -405,12 +410,13 @@ class ServersTab(ctk.CTkFrame):
         if not self.selected:
             return
         if not messagebox.askyesno(
-                "Supprimer", f"Supprimer définitivement '{self.selected}' ?"):
+                t("srv_del_title"),
+                t("srv_del_confirm", name=self.selected)):
             return
         try:
             sm.delete_server(self.selected)
         except sm.ServerError as e:
-            messagebox.showwarning("Suppression impossible", str(e))
+            messagebox.showwarning(t("srv_del_title"), str(e))
             return
         self.buffers.pop(self.selected, None)
         self.selected = None

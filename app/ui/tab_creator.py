@@ -5,6 +5,7 @@ from tkinter import messagebox
 import customtkinter as ctk
 
 from ..core import downloader, mods as mods_mod, server_manager as sm
+from ..i18n import t
 from . import theme
 
 _LABEL_TO_LOADER = {v: k for k, v in downloader.LOADER_LABELS.items()}
@@ -26,7 +27,7 @@ class CreatorTab(ctk.CTkFrame):
         form.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
         form.grid_columnconfigure(1, weight=1)
 
-        ctk.CTkLabel(form, text="Nouveau serveur",
+        ctk.CTkLabel(form, text=t("cre_new"),
                      font=(theme.FONT, 16, "bold"),
                      text_color=theme.TEXT).grid(
             row=0, column=0, columnspan=2, sticky="w", padx=16, pady=(14, 10))
@@ -39,12 +40,12 @@ class CreatorTab(ctk.CTkFrame):
         entry_style = dict(fg_color=theme.PANEL_2, border_color=theme.BORDER,
                            text_color=theme.TEXT)
 
-        label(1, "Nom du serveur")
+        label(1, t("cre_name"))
         self.name_entry = ctk.CTkEntry(form, placeholder_text="mon-serveur",
                                        **entry_style)
         self.name_entry.grid(row=1, column=1, sticky="ew", padx=16, pady=6)
 
-        label(2, "Type de serveur")
+        label(2, t("cre_type"))
         self.loader_menu = ctk.CTkOptionMenu(
             form, values=list(downloader.LOADER_LABELS.values()),
             fg_color=theme.PANEL_2, button_color=theme.ACCENT,
@@ -52,19 +53,19 @@ class CreatorTab(ctk.CTkFrame):
             command=lambda _v: self._load_versions())
         self.loader_menu.grid(row=2, column=1, sticky="ew", padx=16, pady=6)
 
-        label(3, "Version de Minecraft")
+        label(3, t("cre_version"))
         self.version_menu = ctk.CTkOptionMenu(
             form, values=["…"], fg_color=theme.PANEL_2,
             button_color=theme.ACCENT, button_hover_color=theme.ACCENT_HOVER,
             text_color=theme.TEXT)
         self.version_menu.grid(row=3, column=1, sticky="ew", padx=16, pady=6)
 
-        label(4, "Port")
+        label(4, t("cre_port"))
         self.port_entry = ctk.CTkEntry(form, **entry_style)
         self.port_entry.insert(0, "25565")
         self.port_entry.grid(row=4, column=1, sticky="ew", padx=16, pady=6)
 
-        label(5, "RAM allouée")
+        label(5, t("cre_ram"))
         rambox = ctk.CTkFrame(form, fg_color="transparent")
         rambox.grid(row=5, column=1, sticky="ew", padx=16, pady=6)
         rambox.grid_columnconfigure(0, weight=1)
@@ -78,9 +79,9 @@ class CreatorTab(ctk.CTkFrame):
                                     text_color=theme.TEXT)
         self.ram_label.grid(row=0, column=1, padx=(10, 0))
 
-        label(6, "Comptes requis")
+        label(6, t("cre_accounts"))
         self.online_switch = ctk.CTkSwitch(
-            form, text="online-mode (comptes premium uniquement)",
+            form, text=t("cre_online"),
             text_color=theme.TEXT, progress_color=theme.ACCENT)
         self.online_switch.grid(row=6, column=1, sticky="w", padx=16, pady=6)
 
@@ -92,7 +93,7 @@ class CreatorTab(ctk.CTkFrame):
         voicebox = ctk.CTkFrame(form, fg_color="transparent")
         voicebox.grid(row=8, column=1, sticky="ew", padx=16, pady=6)
         self.voice_check = ctk.CTkCheckBox(
-            voicebox, text="Installer", text_color=theme.TEXT,
+            voicebox, text=t("cre_install"), text_color=theme.TEXT,
             fg_color=theme.ACCENT, hover_color=theme.ACCENT_HOVER)
         self.voice_check.pack(side="left")
         self.voice_choice = ctk.CTkSegmentedButton(
@@ -110,7 +111,7 @@ class CreatorTab(ctk.CTkFrame):
 
         label(10, "Playit.gg")
         self.playit_check = ctk.CTkCheckBox(
-            form, text="Configurer un tunnel playit.gg",
+            form, text=t("cre_playit"),
             text_color=theme.TEXT, fg_color=theme.ACCENT,
             hover_color=theme.ACCENT_HOVER, command=self._toggle_playit)
         self.playit_check.grid(row=10, column=1, sticky="w", padx=16, pady=6)
@@ -121,9 +122,9 @@ class CreatorTab(ctk.CTkFrame):
                                padx=16, pady=(0, 10))
         self.playit_frame.grid_columnconfigure(1, weight=1)
         for i, (lab, default, ph) in enumerate((
-                ("Adresse du tunnel", "", "ex: ab12.gl.joinmc.link"),
-                ("Port TCP public", "25565", "port Minecraft"),
-                ("Port UDP public", "24454", "port Voice Chat"))):
+                (t("cre_addr"), "", t("cre_addr_ph")),
+                (t("cre_tcp"), "25565", t("cre_tcp_ph")),
+                (t("cre_udp"), "24454", t("cre_udp_ph")))):
             ctk.CTkLabel(self.playit_frame, text=lab, text_color=theme.MUTED,
                          font=(theme.FONT, 11)).grid(
                 row=i, column=0, sticky="w", padx=12, pady=4)
@@ -136,7 +137,7 @@ class CreatorTab(ctk.CTkFrame):
         self.playit_frame.grid_remove()
 
         self.create_btn = ctk.CTkButton(
-            form, text="⚒  Créer le serveur", height=42,
+            form, text=t("cre_create"), height=42,
             font=(theme.FONT, 14, "bold"), fg_color=theme.GREEN,
             hover_color="#16a34a", text_color="#06210f",
             command=self._create)
@@ -149,7 +150,7 @@ class CreatorTab(ctk.CTkFrame):
         right.grid_rowconfigure(2, weight=1)
         right.grid_columnconfigure(0, weight=1)
 
-        ctk.CTkLabel(right, text="Progression", font=(theme.FONT, 14, "bold"),
+        ctk.CTkLabel(right, text=t("cre_progress"), font=(theme.FONT, 14, "bold"),
                      text_color=theme.TEXT).grid(
             row=0, column=0, sticky="w", padx=14, pady=(14, 4))
         self.progress = ctk.CTkProgressBar(right, progress_color=theme.ACCENT)
@@ -189,8 +190,8 @@ class CreatorTab(ctk.CTkFrame):
         if loader in self._versions_cache:
             self._set_versions(self._versions_cache[loader])
             return
-        self.version_menu.configure(values=["Chargement…"])
-        self.version_menu.set("Chargement…")
+        self.version_menu.configure(values=[t("loading")])
+        self.version_menu.set(t("loading"))
 
         def work():
             try:
@@ -205,7 +206,7 @@ class CreatorTab(ctk.CTkFrame):
 
     def _set_versions(self, versions):
         if not versions:
-            versions = ["Aucune"]
+            versions = [t("none_f")]
         self.version_menu.configure(values=versions)
         self.version_menu.set(versions[0])
 
@@ -216,16 +217,18 @@ class CreatorTab(ctk.CTkFrame):
             return
         name = self.name_entry.get().strip()
         if not name:
-            messagebox.showwarning("Nom manquant", "Donnez un nom au serveur.")
+            messagebox.showwarning(t("cre_missing_name_t"),
+                                   t("cre_missing_name"))
             return
         version = self.version_menu.get()
-        if version in ("Chargement…", "Aucune"):
-            messagebox.showwarning("Version", "Choisissez une version valide.")
+        if version in (t("loading"), t("none_f")):
+            messagebox.showwarning(t("cre_bad_version_t"),
+                                   t("cre_bad_version"))
             return
         try:
             port = int(self.port_entry.get())
         except ValueError:
-            messagebox.showwarning("Port", "Port invalide.")
+            messagebox.showwarning(t("cre_bad_port_t"), t("cre_bad_port"))
             return
 
         voice = "none"
@@ -237,7 +240,7 @@ class CreatorTab(ctk.CTkFrame):
         if self.playit_check.get():
             addr = self.playit_addr.get().strip()
             if not addr:
-                messagebox.showwarning("Playit", "Entrez l'adresse du tunnel playit.")
+                messagebox.showwarning("Playit", t("cre_need_addr"))
                 return
             playit = {
                 "address": addr,
@@ -257,9 +260,9 @@ class CreatorTab(ctk.CTkFrame):
         }
 
         self._creating = True
-        self.create_btn.configure(state="disabled", text="Création en cours…")
+        self.create_btn.configure(state="disabled", text=t("cre_creating"))
         self.progress.set(0)
-        self._append_log(f"══ Création de « {name} » ══")
+        self._append_log(t("cre_log_start", name=name))
 
         def work():
             try:
@@ -277,18 +280,19 @@ class CreatorTab(ctk.CTkFrame):
 
     def _create_done(self, meta):
         self._creating = False
-        self.create_btn.configure(state="normal", text="⚒  Créer le serveur")
+        self.create_btn.configure(state="normal", text=t("cre_create"))
         self.progress.set(1)
         if self.on_created:
             self.on_created(meta)
         if meta.get("summary"):
             SummaryDialog(self.winfo_toplevel(), meta["summary"])
         else:
-            messagebox.showinfo("Terminé", f"Serveur « {meta['name']} » créé !")
+            messagebox.showinfo(t("cre_done"),
+                                t("cre_done_msg", name=meta["name"]))
 
     def _create_failed(self):
         self._creating = False
-        self.create_btn.configure(state="normal", text="⚒  Créer le serveur")
+        self.create_btn.configure(state="normal", text=t("cre_create"))
 
 
 class SummaryDialog(ctk.CTkToplevel):
@@ -296,7 +300,7 @@ class SummaryDialog(ctk.CTkToplevel):
 
     def __init__(self, master, text):
         super().__init__(master)
-        self.title("Serveur créé — Récapitulatif")
+        self.title(t("summary_title"))
         self.geometry("560x420")
         self.configure(fg_color=theme.BG)
         self.transient(master)
@@ -309,7 +313,7 @@ class SummaryDialog(ctk.CTkToplevel):
         box.configure(state="disabled")
 
         ctk.CTkButton(
-            self, text="Copier dans le presse-papier",
+            self, text=t("copy_clip"),
             fg_color=theme.ACCENT, hover_color=theme.ACCENT_HOVER,
             command=lambda: self._copy(text)).pack(pady=(0, 14))
 

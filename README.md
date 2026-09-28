@@ -2,18 +2,18 @@
 
 Application de bureau locale pour **créer, lancer et administrer des serveurs
 Minecraft en 1 clic** — sans compte Minecraft requis (mode offline), avec
-**gestionnaire de mods/plugins** (Modrinth + CurseForge), intégration
-**Voice Chat** / **Playit.gg**, gestion des **joueurs** et un **agent IA
-multi-providers** (Gemini, Anthropic, OpenAI, Ollama, LM Studio…) avec
-**mode de modération autonome**.
+**gestionnaire de mods/plugins** façon ATLauncher/Prism (Modrinth + CurseForge),
+**interface d'administration serveur** (console + joueurs avec têtes et grades),
+intégration **Voice Chat** / **Playit.gg**. Interface en **français et anglais**.
 
 ## Installation
 
 ### Option 1 — Installateur Windows (.msi)
 
 Télécharge `ServerCraftAgent-x.x.x-win64.msi` depuis la page
-[Releases](../../releases), double-clique, puis lance **ServerCraftAgent**
-depuis le menu Démarrer. Aucun prérequis : Python est embarqué.
+[Releases](../../releases), double-clique — **aucun droit administrateur requis**
+(installation par utilisateur). Un raccourci est créé sur le **Bureau** et dans
+le **menu Démarrer**, avec l'icône de l'application.
 
 ### Option 2 — Depuis les sources
 
@@ -25,7 +25,7 @@ python main.py
 ```
 
 Java est détecté automatiquement ; s'il est absent ou trop ancien, un JRE
-Temurin 21 est téléchargé dans `runtimes/` (via l'API Adoptium).
+Temurin 21 est téléchargé dans `%LOCALAPPDATA%\ServerCraftAgent\runtimes`.
 
 ## Fonctionnalités
 
@@ -46,40 +46,34 @@ Temurin 21 est téléchargé dans `runtimes/` (via l'API Adoptium).
 ### Onglet « Mes Serveurs »
 - Lancer / Arrêter (`stop` propre) / Redémarrer / Supprimer / Ouvrir le dossier.
 - **Console en direct** avec coloration des erreurs et envoi de commandes.
-- **Panneau joueurs** : liste en temps réel (détection join/leave + `list`
-  périodique) ; clic sur ⋯ → message privé, **kick, ban, unban, op/deop,
-  gamemode, kill** — tout passe par la console du serveur.
+- **Panneau joueurs** : liste en temps réel ; clic sur ⋯ → message privé,
+  kick, ban, unban, op/deop, gamemode, kill.
 - Bouton **Mods/Plugins** : gestionnaire intégré.
 
-### Gestionnaire de Mods & Plugins
-- Recherche sur **Modrinth** (sans clé) et **CurseForge** (clé API gratuite —
-  console.curseforge.com, champ intégré dans la fenêtre).
-- Installation **automatique** dans `mods/` ou `plugins/` selon le loader et le
-  type — aucun chemin à saisir. Filtrage par loader + version MC.
-- Liste des fichiers installés avec suppression en 1 clic.
-- Sur **Mohist**, les deux types cohabitent (mods Forge + plugins Bukkit).
+### Interface serveur (fenêtre d'administration)
+Quand l'option « Interface serveur » est activée (⚙ Paramètres), le lancement
+d'un serveur ouvre une fenêtre dédiée :
+- **Console de commandes** complète (envoi direct, logs colorés).
+- **Joueurs en ligne** : tête du skin (Minotar), pseudo et grade.
+- **Grades et catégories** : définir un grade (Admin, Modo, VIP…) et trier les
+  joueurs entre « Admins / OP » et « Joueurs ». Op/deop en un clic, stocké dans
+  `ranks.json` du serveur.
 
-### Onglet « Agent IA & Outils »
-- Providers supportés (sélecteur en haut de l'onglet) :
-  - **Gemini (Google)** : clé API AI Studio + modèle (`gemini-2.5-flash`).
-  - **Anthropic (Claude)** : clé `sk-ant-…` + modèle (`claude-sonnet-4-5`).
-  - **OpenAI** : clé `sk-…`, base configurable (`api.openai.com/v1`),
-    modèle (`gpt-4o-mini`).
-  - **Ollama (local)** : `http://localhost:11434`, modèles auto-détectés.
-  - **LM Studio (local)** : `http://localhost:1234/v1`, modèles auto-détectés.
-  - **API compatible OpenAI** : n'importe quel endpoint `/v1/chat/completions`
-    (Groq, OpenRouter, Together, vLLM…).
-- L'agent dispose d'outils sandboxés au dossier du serveur :
-  `list_files`, `read_file`, `read_errors`, `server_info`, `write_file`,
-  `edit_properties`, `send_command`.
-- Bouton **« Analyser les logs »** : extrait les erreurs de `latest.log`,
-  diagnostique et applique le correctif directement dans la config.
-- Prompts rapides (ex : *« Configure ce serveur pour du RP avec Voice Chat et
-  4 Go de RAM »*).
-- **Mode autonome** : switch « Modération autonome du chat » — l'IA lit chaque
-  message du chat, applique tes règles (warn → kick → ban progressifs, compteur
-  d'avertissements par joueur) via la console. Journal des actions affiché
-  dans le chat.
+### Gestionnaire de Mods & Plugins (façon ATLauncher/Prism)
+- Recherche sur **Modrinth** (sans clé) et **CurseForge** (clé API gratuite —
+  console.curseforge.com, configurable dans ⚙ Paramètres).
+- Cartes avec **icône**, auteur, téléchargements, description.
+- **Fiche détaillée** au clic : description complète, **galerie d'images**,
+  catégories, bouton **« Ouvrir la page »** (navigateur) et liste des
+  **versions compatibles** (release/beta/alpha) avec installation individuelle.
+- Pagination « Charger plus » : tout le catalogue est parcourable.
+- Installation **automatique** dans `mods/` ou `plugins/` selon le loader —
+  aucun chemin à saisir. Sur **Mohist**, les deux types cohabitent.
+
+### Paramètres (⚙ en haut à droite)
+- **Langue** : Français / English (appliqué au prochain démarrage).
+- **Interface serveur** au lancement (on/off).
+- **Clé API CurseForge**.
 
 ## Playit.gg — mode d'emploi
 
@@ -96,7 +90,7 @@ Temurin 21 est téléchargé dans `runtimes/` (via l'API Adoptium).
 ```bash
 pip install cx_Freeze
 python setup.py bdist_msi
-# -> dist/ServerCraftAgent-0.1.0-win64.msi
+# -> dist/ServerCraftAgent-0.10.0-win64.msi
 ```
 
 ## Structure
@@ -105,29 +99,30 @@ python setup.py bdist_msi
 main.py                 # point d'entrée
 app/
   config.py             # chemins + settings.json
+  i18n.py               # traductions FR/EN
   core/
     java.py             # détection Java + JRE Temurin auto
-    downloader.py       # versions + jars (Paper/Purpur/Fabric/Forge/NeoForge)
+    downloader.py       # versions + jars (Paper/Purpur/Fabric/Forge/NeoForge/Mohist)
     properties.py       # fichiers .properties
-    mods.py             # Modrinth (Voice Chat) + Playit
+    mods.py             # Modrinth + CurseForge + Voice Chat + Playit
+    players.py          # tracking join/leave + actions admin
+    ranks.py            # grades/catégories joueurs (ranks.json)
     server_manager.py   # création, process, console
-  ai/
-    providers.py        # Gemini REST + Ollama /api/chat
-    agent.py            # boucle d'outils sandboxée
   ui/
-    app_window.py       # fenêtre + tabview
+    app_window.py       # fenêtre + tabview + paramètres
     tab_servers.py      # liste + console live
     tab_creator.py      # formulaire de création
-    tab_ai.py           # chat agent + analyseur
+    mods_manager.py     # navigateur de mods + fiches détaillées
+    server_window.py    # interface serveur (console + joueurs + grades)
 servers/                # vos serveurs (servercraft.json = métadonnées)
-data/settings.json      # réglages (clé API, provider, modèle)
-runtimes/               # JRE téléchargés si besoin
+%LOCALAPPDATA%\ServerCraftAgent\   # données de l'app installée
 ```
 
 ## Notes
 
-- **online-mode=false** est la valeur par défaut : les joueurs peuvent rejoindre
-  sans compte premium (utile avec Playit/LAN).
+- **online-mode=false** par défaut : les joueurs peuvent rejoindre sans compte
+  premium (utile avec Playit/LAN). Les têtes de skin s'affichent quand même via
+  Minotar (skin par défaut pour les pseudos hors-ligne).
 - Pour Forge/NeoForge, le lancement réplique `run.bat`
   (`java @user_jvm_args.txt @libraries/.../win_args.txt nogui`) ; la RAM se
   règle via `user_jvm_args.txt` généré automatiquement.

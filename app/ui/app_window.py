@@ -1,13 +1,14 @@
-"""Fenêtre principale : en-tête + Tabview (3 onglets)."""
+"""Fenêtre principale : en-tête + Tabview (2 onglets) + Paramètres."""
 import sys
 from pathlib import Path
 
 import customtkinter as ctk
 
+from ..config import load_settings, save_settings
+from ..i18n import LANGS, t
 from . import theme
 from .tab_servers import ServersTab
 from .tab_creator import CreatorTab
-from .tab_ai import AiTab
 
 
 class App(ctk.CTk):
@@ -27,9 +28,15 @@ class App(ctk.CTk):
             font=(theme.FONT, 20, "bold"), text_color=theme.TEXT,
         ).pack(side="left", padx=18)
         ctk.CTkLabel(
-            header, text="Créateur & gestionnaire de serveurs Minecraft — sans compte requis",
+            header, text=t("header_sub"),
             font=(theme.FONT, 12), text_color=theme.MUTED,
         ).pack(side="left", padx=8)
+        ctk.CTkButton(
+            header, text="⚙", width=40, height=34,
+            fg_color=theme.PANEL_2, hover_color=theme.HOVER,
+            font=(theme.FONT, 16),
+            command=lambda: SettingsDialog(self),
+        ).pack(side="right", padx=14)
 
         self.tabview = ctk.CTkTabview(
             self, fg_color=theme.BG, corner_radius=10,
@@ -42,21 +49,17 @@ class App(ctk.CTk):
         )
         self.tabview.pack(fill="both", expand=True, padx=12, pady=(4, 12))
 
-        self.tabview.add("Mes Serveurs")
-        self.tabview.add("Créateur Rapide")
-        self.tabview.add("Agent IA & Outils")
+        self.tabview.add(t("tab_servers"))
+        self.tabview.add(t("tab_creator"))
 
-        self.servers_tab = ServersTab(self.tabview.tab("Mes Serveurs"))
+        self.servers_tab = ServersTab(self.tabview.tab(t("tab_servers")))
         self.servers_tab.pack(fill="both", expand=True)
 
         self.creator_tab = CreatorTab(
-            self.tabview.tab("Créateur Rapide"),
+            self.tabview.tab(t("tab_creator")),
             on_created=lambda meta: self.servers_tab.refresh(),
         )
         self.creator_tab.pack(fill="both", expand=True)
-
-        self.ai_tab = AiTab(self.tabview.tab("Agent IA & Outils"))
-        self.ai_tab.pack(fill="both", expand=True)
 
     def _set_icon(self):
         base = (Path(sys.executable).parent if getattr(sys, "frozen", False)
@@ -67,3 +70,80 @@ class App(ctk.CTk):
                 self.wm_iconbitmap(str(ico))
             except Exception:
                 pass
+
+
+class SettingsDialog(ctk.CTkToplevel):
+    """Paramètres : langue, interface serveur, clé CurseForge."""
+
+    def __init__(self, master):
+        super().__init__(master)
+        self.settings = load_settings()
+        self.title(t("settings"))
+        self.geometry("480x330")
+        self.configure(fg_color=theme.BG)
+        self.transient(master)
+        self.grab_set()
+
+        card = ctk.CTkFrame(self, fg_color=theme.PANEL, corner_radius=10)
+        card.pack(fill="both", expand=True, padx=14, pady=14)
+
+        ctk.CTkLabel(card, text=t("settings"),
+                     font=(theme.FONT, 15, "bold"),
+                     text_color=theme.TEXT).pack(anchor="w", padx=14, pady=(14, 8))
+
+        # langue
+        row = ctk.CTkFrame(card, fg_color="transparent")
+        row.pack(fill="x", padx=14, pady=6)
+        ctk.CTkLabel(row, text=t("language"), width=140, anchor="w",
+                     text_color=theme.MUTED).pack(side="left")
+        self.lang_menu = ctk.CTkOptionMenu(
+            row, values=list(LANGS.values()), width=160,
+            fg_color=theme.PANEL_2, button_color=theme.ACCENT,
+            button_hover_color=theme.ACCENT_HOVER, text_color=theme.TEXT)
+        self.lang_menu.set(LANGS.get(self.settings.get("language"), "Français"))
+        self.lang_menu.pack(side="left")
+        ctk.CTkLabel(card, text=t("restart_hint"), font=(theme.FONT, 10),
+                     text_color=theme.MUTED).pack(anchor="w", padx=14)
+
+        # interface serveur
+        row = ctk.CTkFrame(card, fg_color="transparent")
+        row.pack(fill="x", padx=14, pady=10)
+        self.iface_switch = ctk.CTkSwitch(
+            row, text=t("server_interface"), text_color=theme.TEXT,
+            progress_color=theme.ACCENT)
+        if self.settings.get("server_interface", True):
+            self.iface_switch.select()
+        self.iface_switch.pack(side="left")
+        ctk.CTkLabel(card, text=t("server_interface_hint"),
+                     font=(theme.FONT, 10), text_color=theme.MUTED,
+                     wraplength=430, justify="left").pack(
+            anchor="w", padx=14, pady=(0, 8))
+
+        # clé curseforge
+        row = ctk.CTkFrame(card, fg_color="transparent")
+        row.pack(fill="x", padx=14, pady=6)
+        ctk.CTkLabel(row, text=t("cf_key_label"), width=140, anchor="w",
+                     text_color=theme.MUTED).pack(side="left")
+        self.cf_entry = ctk.CTkEntry(
+            row, width=230, show="•", placeholder_text="x-api-key",
+            fg_color=theme.PANEL_2, border_color=theme.BORDER,
+            text_color=theme.TEXT)
+        self.cf_entry.insert(0, self.settings.get("curseforge_api_key", ""))
+        self.cf_entry.pack(side="left")
+        ctk.CTkLabel(card, text=t("cf_key_hint"), font=(theme.FONT, 10),
+                     text_color=theme.MUTED, wraplength=430,
+                     justify="left").pack(anchor="w", padx=14, pady=(0, 8))
+
+        ctk.CTkButton(card, text=t("save_close"), width=140,
+                      fg_color=theme.ACCENT, hover_color=theme.ACCENT_HOVER,
+                      command=self._save).pack(pady=10)
+
+    def _save(self):
+        label = self.lang_menu.get()
+        for code, name in LANGS.items():
+            if name == label:
+                self.settings["language"] = code
+        self.settings["server_interface"] = bool(self.iface_switch.get())
+        self.settings["curseforge_api_key"] = self.cf_entry.get().strip()
+        save_settings(self.settings)
+        self.destroy()

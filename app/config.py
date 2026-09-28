@@ -23,25 +23,10 @@ RUNTIMES_DIR = APP_DIR / "runtimes"
 SETTINGS_FILE = DATA_DIR / "settings.json"
 
 DEFAULT_SETTINGS = {
-    "ai_provider": "gemini",            # clé dans ai.providers.PROVIDERS
-    "gemini_api_key": "",
-    "gemini_model": "gemini-2.5-flash",
-    "anthropic_api_key": "",
-    "anthropic_model": "claude-sonnet-4-5",
-    "openai_api_key": "",
-    "openai_base": "https://api.openai.com/v1",
-    "openai_model": "gpt-4o-mini",
-    "ollama_url": "http://localhost:11434",
-    "ollama_model": "llama3.1",
-    "lmstudio_url": "http://localhost:1234/v1",
-    "lmstudio_model": "",
-    "custom_base": "",
-    "custom_key": "",
-    "custom_model": "",
     "curseforge_api_key": "",           # console.curseforge.com (gratuit)
-    "auto_mod_enabled": False,          # modération autonome du chat par l'IA
-    "auto_mod_rules": "Aucune insulte, aucun spam, respect entre joueurs.",
     "java_path": "",                    # vide = détection/auto-téléchargement
+    "language": "fr",                   # "fr" | "en"
+    "server_interface": True,           # fenêtre d'administration au lancement
 }
 
 

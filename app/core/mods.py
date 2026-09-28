@@ -122,6 +122,7 @@ def search_modrinth(query: str, loader: str, mc_version: str,
             "description": h["description"], "downloads": h["downloads"],
             "author": h["author"], "source": "modrinth",
             "kind": kind, "icon": h.get("icon_url", ""),
+            "url": f"https://modrinth.com/{'plugin' if kind == 'plugin' else 'mod'}/{h['slug']}",
         }
         for h in r.json().get("hits", [])
     ]
@@ -203,8 +204,68 @@ def search_curseforge(query: str, loader: str, mc_version: str,
             "author": ", ".join(a["name"] for a in m.get("authors", [])),
             "source": "curseforge", "kind": kind,
             "icon": (m.get("logo") or {}).get("thumbnailUrl", ""),
+            "url": (m.get("links") or {}).get("websiteUrl", ""),
         })
     return out
+
+
+# ------------------------------------------------------- détails d'un projet
+
+def modrinth_project(slug: str) -> dict:
+    """Fiche complète Modrinth : description longue, galerie, liens."""
+    r = requests.get(f"{MODRINTH_API}/project/{slug}", headers=_UA, timeout=20)
+    r.raise_for_status()
+    p = r.json()
+    return {
+        "title": p["title"], "description": p.get("description", ""),
+        "body": p.get("body", ""),
+        "author": "", "downloads": p.get("downloads", 0),
+        "followers": p.get("followers", 0),
+        "icon": p.get("icon_url", ""),
+        "categories": p.get("categories", []),
+        "gallery": [g["url"] for g in p.get("gallery", [])][:8],
+        "url": (f"https://modrinth.com/{p.get('project_type', 'mod')}"
+                f"/{p['slug']}"),
+        "source_url": (p.get("source_url") or p.get("issues_url") or ""),
+        "license": (p.get("license") or {}).get("id", ""),
+    }
+
+
+def curseforge_project(mod_id: int, api_key: str) -> dict:
+    """Fiche CurseForge : description HTML brute → texte, screenshots, liens."""
+    r = requests.get(f"{CURSEFORGE_API}/mods/{mod_id}",
+                     headers=_cf_headers(api_key), timeout=20)
+    r.raise_for_status()
+    m = r.json()["data"]
+    body = ""
+    try:
+        d = requests.get(f"{CURSEFORGE_API}/mods/{mod_id}/description",
+                         headers=_cf_headers(api_key), timeout=20)
+        if d.ok:
+            import re as _re
+            body = _re.sub(r"<[^>]+>", " ",
+                           d.json().get("data", "") or "")
+            body = _re.sub(r"\s+", " ", body).strip()
+    except requests.RequestException:
+        pass
+    return {
+        "title": m["name"], "description": m.get("summary", ""),
+        "body": body,
+        "author": ", ".join(a["name"] for a in m.get("authors", [])),
+        "downloads": m.get("downloadCount", 0), "followers": 0,
+        "icon": (m.get("logo") or {}).get("url", ""),
+        "categories": [c["name"] for c in m.get("categories", [])],
+        "gallery": [s["url"] for s in m.get("screenshots", [])][:8],
+        "url": (m.get("links") or {}).get("websiteUrl", ""),
+        "source_url": (m.get("links") or {}).get("sourceUrl", ""),
+        "license": "",
+    }
+
+
+def project_details(result: dict, api_key: str = "") -> dict:
+    if result["source"] == "curseforge":
+        return curseforge_project(result["id"], api_key)
+    return modrinth_project(result["slug"])
 
 
 def install_curseforge(mod_id: int, server_dir: Path, loader: str,
