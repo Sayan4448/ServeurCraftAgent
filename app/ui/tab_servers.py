@@ -1,4 +1,5 @@
 """Onglet « Mes Serveurs » : liste / console / joueurs."""
+import subprocess
 import threading
 import tkinter as tk
 from collections import deque
@@ -14,6 +15,7 @@ from ..core.server_net import local_ip, public_ip, playit_address
 from ..i18n import t
 from . import theme
 from .mods_manager import ModsManager
+from .server_settings import ServerSettings
 from .server_window import ServerWindow
 
 BTN = dict(height=34, font=(theme.FONT, 12), corner_radius=8)
@@ -96,28 +98,31 @@ class ServersTab(ctk.CTkFrame):
         self.info_label.grid(row=2, column=0, columnspan=2, sticky="w",
                              padx=14, pady=2)
 
-        # 3 boutons d'action sur leur propre ligne — jamais masqués
+        # boutons d'action sur leurs propres lignes — jamais masqués
         btnrow = ctk.CTkFrame(col, fg_color="transparent")
         btnrow.grid(row=3, column=0, columnspan=2, sticky="ew", padx=10,
                     pady=(4, 2))
+        for r in (0, 1):
+            btnrow.grid_rowconfigure(r, weight=0)
         btnrow.grid_columnconfigure((0, 1, 2), weight=1, uniform="b")
         self._btns = {}
-        self._btns["srv_start"] = ctk.CTkButton(
-            btnrow, text=t("srv_start"), command=self._start,
-            fg_color=theme.GREEN, hover_color="#16a34a",
-            text_color="#06210f", font=(theme.FONT, 13, "bold"), height=38)
-        self._btns["srv_stop"] = ctk.CTkButton(
-            btnrow, text=t("srv_stop"), command=self._stop,
-            fg_color=theme.RED, hover_color="#b91c1c",
-            font=(theme.FONT, 13, "bold"), height=38)
-        self._btns["srv_mods"] = ctk.CTkButton(
-            btnrow, text=t("srv_mods"), command=self._open_mods,
-            fg_color=theme.PANEL_2, hover_color=theme.HOVER,
-            text_color=theme.TEXT, font=(theme.FONT, 13, "bold"), height=38)
-        self._btns["srv_start"].grid(row=0, column=0, sticky="ew", padx=(0, 4))
-        self._btns["srv_stop"].grid(row=0, column=1, sticky="ew", padx=4)
-        self._btns["srv_mods"].grid(row=0, column=2, sticky="ew",
-                                  padx=(4, 0))
+
+        def _btn(key, cmd, color, row, col_, text_color=None):
+            b = ctk.CTkButton(
+                btnrow, text=t(key), command=cmd, fg_color=color,
+                hover_color=theme.HOVER if color == theme.PANEL_2 else None,
+                text_color=text_color or theme.TEXT,
+                font=(theme.FONT, 13, "bold"), height=38)
+            padx = (0, 4) if col_ == 0 else (4, 0) if col_ == 2 else (4, 4)
+            b.grid(row=row, column=col_, sticky="ew", padx=padx, pady=2)
+            self._btns[key] = b
+
+        _btn("srv_start", self._start, theme.GREEN, 0, 0, "#06210f")
+        _btn("srv_stop", self._stop, theme.RED, 0, 1)
+        _btn("srv_restart", self._restart, theme.ORANGE, 0, 2)
+        _btn("srv_mods", self._open_mods, theme.PANEL_2, 1, 0)
+        _btn("srv_settings", self._open_settings, theme.PANEL_2, 1, 1)
+        _btn("srv_folder", self._open_folder, theme.PANEL_2, 1, 2)
 
         self.console = ctk.CTkTextbox(
             col, font=(theme.FONT_MONO, 11), fg_color=theme.CONSOLE_BG,
@@ -260,6 +265,8 @@ class ServersTab(ctk.CTkFrame):
             state="disabled" if running else "normal")
         self._btns["srv_stop"].configure(
             state="normal" if running else "disabled")
+        self._btns["srv_restart"].configure(
+            state="normal" if running else "disabled")
 
     def _start(self):
         if not self.proc or self.proc.is_running():
@@ -291,6 +298,12 @@ class ServersTab(ctk.CTkFrame):
             self.proc.stop()
         self._update_state()
 
+    def _restart(self):
+        if self.proc and self.proc.is_running():
+            self._append(t("srv_stop_req"), "warn")
+            self.proc.restart()
+        self._update_state()
+
     def _send(self):
         cmd = self.cmd_entry.get().strip()
         if not cmd:
@@ -304,6 +317,14 @@ class ServersTab(ctk.CTkFrame):
     def _open_mods(self):
         if self.meta:
             ModsManager(self, self.meta)
+
+    def _open_settings(self):
+        if self.meta:
+            ServerSettings(self, self.meta)
+
+    def _open_folder(self):
+        if self.meta:
+            subprocess.Popen(["explorer", str(Path(self.meta["dir"]))])
 
     def _delete(self):
         if not self.meta:
