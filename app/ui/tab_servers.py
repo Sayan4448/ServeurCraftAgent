@@ -1,5 +1,4 @@
 """Onglet « Mes Serveurs » : liste / console / joueurs."""
-import subprocess
 import threading
 import tkinter as tk
 from collections import deque
@@ -15,7 +14,6 @@ from ..core.server_net import local_ip, public_ip, playit_address
 from ..i18n import t
 from . import theme
 from .mods_manager import ModsManager
-from .server_settings import ServerSettings
 from .server_window import ServerWindow
 
 BTN = dict(height=34, font=(theme.FONT, 12), corner_radius=8)
@@ -74,7 +72,7 @@ class ServersTab(ctk.CTkFrame):
     def _build_console_col(self):
         col = ctk.CTkFrame(self, fg_color=theme.PANEL, corner_radius=10)
         col.grid(row=0, column=1, sticky="nsew", padx=(0, 8))
-        col.grid_rowconfigure(3, weight=1)
+        col.grid_rowconfigure(4, weight=1)
         col.grid_columnconfigure(0, weight=1)
         col.grid_columnconfigure(1, weight=0)
 
@@ -82,25 +80,10 @@ class ServersTab(ctk.CTkFrame):
             col, text=t("srv_none_sel"), font=(theme.FONT, 15, "bold"),
             text_color=theme.TEXT, anchor="w")
         self.sel_label.grid(row=0, column=0, sticky="w", padx=12, pady=(10, 0))
-
-        # statut + boutons dans le header
-        btns = ctk.CTkFrame(col, fg_color="transparent")
-        btns.grid(row=0, column=1, sticky="e", padx=10, pady=(10, 0))
         self.state_label = ctk.CTkLabel(
-            btns, text="", font=(theme.FONT, 12, "bold"))
-        self.state_label.pack(side="left", padx=(0, 10))
-        self._btns = {}
-        for key, color, cmd in (
-                ("srv_settings", theme.PANEL_2, self._open_settings),
-                ("srv_mods", theme.PANEL_2, self._open_mods),
-                ("srv_folder", theme.PANEL_2, self._open_folder),
-                ("srv_restart", theme.ORANGE, self._restart),
-                ("srv_stop", theme.RED, self._stop),
-                ("srv_start", theme.GREEN, self._start)):
-            b = ctk.CTkButton(btns, text=t(key), command=cmd, fg_color=color,
-                              width=92, **BTN)
-            b.pack(side="left", padx=2)
-            self._btns[key] = b
+            col, text="", font=(theme.FONT, 12, "bold"))
+        self.state_label.grid(row=0, column=1, sticky="e", padx=10,
+                              pady=(10, 0))
 
         # ligne IP
         self.ip_label = ctk.CTkLabel(col, text="", font=(theme.FONT_MONO, 11),
@@ -113,15 +96,38 @@ class ServersTab(ctk.CTkFrame):
         self.info_label.grid(row=2, column=0, columnspan=2, sticky="w",
                              padx=14, pady=2)
 
+        # 3 boutons d'action sur leur propre ligne — jamais masqués
+        btnrow = ctk.CTkFrame(col, fg_color="transparent")
+        btnrow.grid(row=3, column=0, columnspan=2, sticky="ew", padx=10,
+                    pady=(4, 2))
+        btnrow.grid_columnconfigure((0, 1, 2), weight=1, uniform="b")
+        self._btns = {}
+        self._btns["srv_start"] = ctk.CTkButton(
+            btnrow, text=t("srv_start"), command=self._start,
+            fg_color=theme.GREEN, hover_color="#16a34a",
+            text_color="#06210f", font=(theme.FONT, 13, "bold"), height=38)
+        self._btns["srv_stop"] = ctk.CTkButton(
+            btnrow, text=t("srv_stop"), command=self._stop,
+            fg_color=theme.RED, hover_color="#b91c1c",
+            font=(theme.FONT, 13, "bold"), height=38)
+        self._btns["srv_mods"] = ctk.CTkButton(
+            btnrow, text=t("srv_mods"), command=self._open_mods,
+            fg_color=theme.PANEL_2, hover_color=theme.HOVER,
+            text_color=theme.TEXT, font=(theme.FONT, 13, "bold"), height=38)
+        self._btns["srv_start"].grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        self._btns["srv_stop"].grid(row=0, column=1, sticky="ew", padx=4)
+        self._btns["srv_mods"].grid(row=0, column=2, sticky="ew",
+                                  padx=(4, 0))
+
         self.console = ctk.CTkTextbox(
             col, font=(theme.FONT_MONO, 11), fg_color=theme.CONSOLE_BG,
             text_color=theme.CONSOLE_TEXT, corner_radius=8, state="disabled",
             wrap="none")
-        self.console.grid(row=3, column=0, columnspan=2, sticky="nsew",
+        self.console.grid(row=4, column=0, columnspan=2, sticky="nsew",
                           padx=10, pady=10)
 
         row = ctk.CTkFrame(col, fg_color="transparent")
-        row.grid(row=4, column=0, columnspan=2, sticky="ew", padx=10,
+        row.grid(row=5, column=0, columnspan=2, sticky="ew", padx=10,
                  pady=(0, 10))
         row.grid_columnconfigure(0, weight=1)
         self.cmd_entry = ctk.CTkEntry(
@@ -254,19 +260,28 @@ class ServersTab(ctk.CTkFrame):
             state="disabled" if running else "normal")
         self._btns["srv_stop"].configure(
             state="normal" if running else "disabled")
-        self._btns["srv_restart"].configure(
-            state="normal" if running else "disabled")
 
     def _start(self):
         if not self.proc or self.proc.is_running():
             return
         self._append(t("srv_starting", name=self.meta["name"]), "info")
-        try:
-            self.proc.start(on_line=self._on_console_line,
-                            on_exit=self._on_exit)
-        except Exception as e:  # noqa: BLE001
-            self._append(f"{t('srv_start_err')} : {e}", "err")
-        self._update_state()
+        self._btns["srv_start"].configure(state="disabled")
+
+        def work():
+            try:
+                self.proc.start(on_line=self._on_console_line,
+                                on_exit=self._on_exit)
+            except Exception as e:  # noqa: BLE001
+                try:
+                    self.after(0, self._append,
+                               f"{t('srv_start_err')} : {e}", "err")
+                except RuntimeError:
+                    pass
+            try:
+                self.after(0, self._update_state)
+            except RuntimeError:
+                pass
+        threading.Thread(target=work, daemon=True).start()
         if load_settings().get("server_interface", True):
             ServerWindow.open(self, self.meta["name"])
 
@@ -274,11 +289,6 @@ class ServersTab(ctk.CTkFrame):
         if self.proc and self.proc.is_running():
             self._append(t("srv_stop_req"), "warn")
             self.proc.stop()
-        self._update_state()
-
-    def _restart(self):
-        if self.proc:
-            self.proc.restart()
         self._update_state()
 
     def _send(self):
@@ -294,14 +304,6 @@ class ServersTab(ctk.CTkFrame):
     def _open_mods(self):
         if self.meta:
             ModsManager(self, self.meta)
-
-    def _open_settings(self):
-        if self.meta:
-            ServerSettings(self, self.meta)
-
-    def _open_folder(self):
-        if self.meta:
-            subprocess.Popen(["explorer", str(Path(self.meta["dir"]))])
 
     def _delete(self):
         if not self.meta:

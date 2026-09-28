@@ -1079,6 +1079,92 @@ STRINGS = {
 }
 
 
+STRINGS["fr"].update({
+    "mp_import": "📦 Importer un modpack",
+    "mp_pick": "Choisir un modpack (.zip)",
+    "mp_analyzing": "Analyse du modpack…",
+    "mp_result": "Analyse du modpack — {n} fichier(s)",
+    "mp_server": "✅ Mods serveur ({n})",
+    "mp_client": "🖥 Mods client — ignorés ({n})",
+    "mp_unknown": "❓ Indéterminés — installés ({n})",
+    "mp_inc_client": "Inclure quand même les mods client (déconseillé)",
+    "mp_client_hint": "Les mods client (rendu, interface, minimap…) ne servent pas côté serveur et peuvent le faire planter — ils sont ignorés par défaut.",
+    "mp_install": "Installer la sélection",
+    "mp_installed_n": "✔ {n} fichier(s) copié(s) dans mods/",
+    "mp_none": "Aucun .jar trouvé dans ce modpack.",
+})
+STRINGS["en"].update({
+    "mp_import": "📦 Import a modpack",
+    "mp_pick": "Choose a modpack (.zip)",
+    "mp_analyzing": "Analyzing modpack…",
+    "mp_result": "Modpack analysis — {n} file(s)",
+    "mp_server": "✅ Server mods ({n})",
+    "mp_client": "🖥 Client mods — skipped ({n})",
+    "mp_unknown": "❓ Unknown — installed ({n})",
+    "mp_inc_client": "Include client mods anyway (not recommended)",
+    "mp_client_hint": "Client-side mods (rendering, UI, minimap…) are useless on a server and can crash it — skipped by default.",
+    "mp_install": "Install selection",
+    "mp_installed_n": "✔ {n} file(s) copied to mods/",
+    "mp_none": "No .jar found in this modpack.",
+})
+STRINGS["ru"].update({
+    "mp_import": "📦 Импорт модпака",
+    "mp_pick": "Выберите модпак (.zip)",
+    "mp_analyzing": "Анализ модпака…",
+    "mp_result": "Анализ модпака — файлов: {n}",
+    "mp_server": "✅ Серверные моды ({n})",
+    "mp_client": "🖥 Клиентские — пропущены ({n})",
+    "mp_unknown": "❓ Неизвестные — установлены ({n})",
+    "mp_inc_client": "Всё же включить клиентские моды (не советую)",
+    "mp_client_hint": "Клиентские моды (графика, интерфейс, миникарта…) бесполезны на сервере и могут его ронять — по умолчанию пропускаются.",
+    "mp_install": "Установить выбранное",
+    "mp_installed_n": "✔ Скопировано в mods/: {n}",
+    "mp_none": "В модпаке нет .jar файлов.",
+})
+STRINGS["ja"].update({
+    "mp_import": "📦 モッドパックを導入",
+    "mp_pick": "モッドパックを選択 (.zip)",
+    "mp_analyzing": "モッドパックを解析中…",
+    "mp_result": "モッドパック解析 — {n} ファイル",
+    "mp_server": "✅ サーバー用MOD ({n})",
+    "mp_client": "🖥 クライアント用 — 除外 ({n})",
+    "mp_unknown": "❓ 不明 — 導入 ({n})",
+    "mp_inc_client": "クライアント用MODも入れる（非推奨）",
+    "mp_client_hint": "クライアント用MOD（描画・UI・ミニマップ等）はサーバーには不要で、クラッシュの原因になります — 既定で除外。",
+    "mp_install": "選択をインストール",
+    "mp_installed_n": "✔ {n} 個を mods/ にコピー",
+    "mp_none": "このモッドパックに .jar が見つかりません。",
+})
+STRINGS["es"].update({
+    "mp_import": "📦 Importar modpack",
+    "mp_pick": "Elige un modpack (.zip)",
+    "mp_analyzing": "Analizando modpack…",
+    "mp_result": "Análisis del modpack — {n} archivo(s)",
+    "mp_server": "✅ Mods de servidor ({n})",
+    "mp_client": "🖥 Mods de cliente — omitidos ({n})",
+    "mp_unknown": "❓ Desconocidos — instalados ({n})",
+    "mp_inc_client": "Incluir mods de cliente igualmente (no recomendado)",
+    "mp_client_hint": "Los mods de cliente (renderizado, interfaz, minimapa…) no sirven en un servidor y pueden romperlo — se omiten por defecto.",
+    "mp_install": "Instalar selección",
+    "mp_installed_n": "✔ {n} archivo(s) copiado(s) a mods/",
+    "mp_none": "No se encontró ningún .jar en el modpack.",
+})
+STRINGS["de"].update({
+    "mp_import": "📦 Modpack importieren",
+    "mp_pick": "Modpack wählen (.zip)",
+    "mp_analyzing": "Modpack wird analysiert…",
+    "mp_result": "Modpack-Analyse — {n} Datei(en)",
+    "mp_server": "✅ Server-Mods ({n})",
+    "mp_client": "🖥 Client-Mods — übersprungen ({n})",
+    "mp_unknown": "❓ Unbekannt — installiert ({n})",
+    "mp_inc_client": "Client-Mods trotzdem einbeziehen (nicht empfohlen)",
+    "mp_client_hint": "Client-Mods (Rendering, UI, Minimap…) sind auf einem Server nutzlos und können Abstürze verursachen — standardmäßig übersprungen.",
+    "mp_install": "Auswahl installieren",
+    "mp_installed_n": "✔ {n} Datei(en) nach mods/ kopiert",
+    "mp_none": "Keine .jar im Modpack gefunden.",
+})
+
+
 def get_lang() -> str:
     lang = load_settings().get("language", "fr")
     return lang if lang in STRINGS else "fr"

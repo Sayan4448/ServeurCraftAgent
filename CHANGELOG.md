@@ -2,6 +2,17 @@
 
 ## v0.20.0 — Release (2026-09-29)
 
+**Correctif** : les boutons de l'onglet « Mes Serveurs » débordaient de leur
+colonne et étaient recouverts par le panneau joueurs — « Lancer » ne répondait
+plus. Barre simplifiée à 3 boutons (« ▶ Lancer », « ■ Arrêter »,
+« 🧩 Ouvrir les mods ») sur leur propre ligne, démarrage en tâche de fond.
+
+**Import de modpack** (bouton « 📦 Importer un modpack » dans le gestionnaire
+de mods) : analyse automatique des .jar — identification via Modrinth
+(SHA1 → projet, `client_side`/`server_side`), métadonnées internes
+(fabric.mod.json, mods.toml) et liste de mods client connus. Les mods client
+sont ignorés par défaut, les serveurs copiés dans `mods/`.
+
 **Statut et adresses**
 - Indicateur « ● Lancé / ○ Arrêté » synchronisé en temps réel ; bouton rouge
   « Arrêter » actif uniquement quand le serveur tourne

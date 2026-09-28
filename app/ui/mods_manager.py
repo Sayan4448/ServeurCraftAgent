@@ -96,6 +96,11 @@ class ModsManager(ctk.CTkToplevel):
                       fg_color=theme.ACCENT, hover_color=theme.ACCENT_HOVER,
                       command=lambda: self._search(reset=True),
                       ).pack(side="left", padx=4, pady=10)
+        ctk.CTkButton(ctrl, text=t("mp_import"), width=170,
+                      fg_color=theme.PANEL_2, hover_color=theme.HOVER,
+                      text_color=theme.TEXT,
+                      command=self._import_modpack).pack(
+            side="left", padx=6, pady=10)
 
         # clé CurseForge (affichée seulement si source=CurseForge)
         self.cf_box = ctk.CTkFrame(ctrl, fg_color="transparent")
@@ -364,6 +369,106 @@ class ModsManager(ctk.CTkToplevel):
                                t("mods_del_confirm", name=name), parent=self):
             mods_mod.remove_installed(path)
             self._refresh_installed()
+
+    # ---------------------------------------------------------- modpack
+    def _import_modpack(self):
+        from tkinter import filedialog
+        path = filedialog.askopenfilename(
+            parent=self, title=t("mp_pick"),
+            filetypes=[("Modpack", "*.zip"), ("Jar", "*.jar")])
+        if not path:
+            return
+        self._set_status(t("mp_analyzing"))
+
+        def work():
+            from ..core import modpack
+            jars = modpack.collect_jars(Path(path))
+            result = (modpack.analyze(jars) if jars else
+                      {"server": [], "client": [], "unknown": []})
+            try:
+                self.after(0, self._show_modpack_result, result)
+            except RuntimeError:
+                pass
+        threading.Thread(target=work, daemon=True).start()
+
+    def _show_modpack_result(self, result: dict):
+        self._set_status("")
+        n = sum(len(v) for v in result.values())
+        if not n:
+            self._set_status(t("mp_none"))
+            return
+        ModpackDialog(self, result)
+
+
+class ModpackDialog(ctk.CTkToplevel):
+    """Résultat de l'analyse : mods serveur / mods client / inconnus."""
+
+    def __init__(self, manager: ModsManager, result: dict):
+        super().__init__(manager)
+        self.manager = manager
+        self.result = result
+        self.title(t("mp_result", n=sum(len(v) for v in result.values())))
+        self.geometry("640x560")
+        self.configure(fg_color=theme.BG)
+        self.transient(manager)
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(2, weight=1)
+
+        ctk.CTkLabel(self, text=t("mp_client_hint"),
+                     font=(theme.FONT, 11), text_color=theme.MUTED,
+                     wraplength=590, justify="left").grid(
+            row=0, column=0, sticky="w", padx=14, pady=(12, 0))
+        self.inc_client = ctk.CTkCheckBox(
+            self, text=t("mp_inc_client"), text_color=theme.TEXT,
+            fg_color=theme.ACCENT)
+        self.inc_client.grid(row=1, column=0, sticky="w", padx=14, pady=6)
+
+        body = ctk.CTkScrollableFrame(self, fg_color=theme.PANEL,
+                                      corner_radius=10)
+        body.grid(row=2, column=0, sticky="nsew", padx=12, pady=6)
+        self._section(body, t("mp_server", n=len(result["server"])),
+                      result["server"], theme.GREEN)
+        self._section(body, t("mp_client", n=len(result["client"])),
+                      result["client"], theme.ORANGE)
+        self._section(body, t("mp_unknown", n=len(result["unknown"])),
+                      result["unknown"], theme.MUTED)
+
+        self.status = ctk.CTkLabel(self, text="", text_color=theme.GREEN,
+                                   font=(theme.FONT, 11))
+        self.status.grid(row=3, column=0, sticky="w", padx=16)
+        ctk.CTkButton(
+            self, text=t("mp_install"), height=36,
+            font=(theme.FONT, 13, "bold"), fg_color=theme.GREEN,
+            hover_color="#16a34a", text_color="#06210f",
+            command=self._install).grid(row=4, column=0, sticky="ew",
+                                        padx=12, pady=(4, 12))
+
+    def _section(self, parent, title, items, color):
+        if not items:
+            return
+        ctk.CTkLabel(parent, text=title, font=(theme.FONT, 12, "bold"),
+                     text_color=color, anchor="w").pack(
+            fill="x", padx=6, pady=(10, 2))
+        for path, name in items:
+            row = ctk.CTkFrame(parent, fg_color=theme.PANEL_2,
+                               corner_radius=6)
+            row.pack(fill="x", padx=4, pady=1)
+            ctk.CTkLabel(row, text=name, font=(theme.FONT, 11),
+                         text_color=theme.TEXT, anchor="w").pack(
+                side="left", padx=8, pady=5)
+            ctk.CTkLabel(row, text=Path(path).name,
+                         font=(theme.FONT, 9), text_color=theme.MUTED,
+                         anchor="e").pack(side="right", padx=8)
+
+    def _install(self):
+        from ..core import modpack
+        files = [p for p, _t in self.result["server"]]
+        if self.inc_client.get():
+            files += [p for p, _t in self.result["client"]]
+        files += [p for p, _t in self.result["unknown"]]
+        n = modpack.install(files, self.manager.server_dir, "mods")
+        self.status.configure(text=t("mp_installed_n", n=n))
+        self.manager._refresh_installed()
 
 
 class ModDetailDialog(ctk.CTkToplevel):
