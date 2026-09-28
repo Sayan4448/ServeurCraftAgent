@@ -1,6 +1,6 @@
 # Versions — ServerCraft Agent
 
-## v0.20.0 — Release (2026-09-29)
+## v0.5.0 — Release (2026-09-29)
 
 **Nouvelle interface**
 - Tableau de bord par serveur : pastille d'état, IP cliquables (copie),
