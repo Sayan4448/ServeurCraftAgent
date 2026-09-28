@@ -36,6 +36,14 @@ d'instances Prism/ATLauncher en plus des zip de jars — tri client/serveur
 par hash SHA1 → Modrinth, métadonnées internes et liste de mods client
 connus ; installation depuis la fenêtre de résultat
 
+**Correctifs**
+- Console : les réponses des commandes internes (`list`, `data get`,
+  `give`…) ne polluent plus la console — masquées mais conservées dans
+  le backlog pour les modules qui en ont besoin
+- Mémoire : backlog serveur ramené à 4000 lignes ; la carte RAM affiche
+  le processus Java réel (Java monte jusqu'à sa limite -Xmx, c'est
+  normal — baisser la RAM dans ⚙ Config pour un serveur léger)
+
 ## v0.5.0 — Release (2026-09-29)
 
 **Nouvelle interface**

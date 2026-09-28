@@ -16,6 +16,7 @@ import customtkinter as ctk
 from PIL import Image
 
 from ..core import playerdata as pd
+from ..core import server_manager
 from ..core import worldmap
 
 MINOTAR = "https://minotar.net/helm/{}/64.png"
@@ -212,13 +213,14 @@ class PlayerCard(ctk.CTkToplevel):
             return None
         import time
         _lines, seen = proc.lines_since(0)
-        if not proc.send(f"data get entity {self.name} Pos"):
+        if not proc.send_quiet(f"data get entity {self.name} Pos"):
             return None
         end = time.time() + 2.0
         while time.time() < end:
             time.sleep(0.15)
             lines, seen = proc.lines_since(seen)
             for ln in lines:
+                ln = ln.lstrip(server_manager.QUIET_MARK)
                 if "entity data" in ln:
                     m = _POS_RE.search(ln)
                     if m:
@@ -351,7 +353,7 @@ class PlayerCard(ctk.CTkToplevel):
             return
         slot, ender = self._sel
         if pd.is_online(self.proc, self.name):
-            self.proc.send(
+            self.proc.send_quiet(
                 f"item replace entity {self.name} "
                 f"{_slot_cmd(slot, ender)} with air")
             self.status.configure(text="→ item replace … with air")
@@ -374,11 +376,11 @@ class PlayerCard(ctk.CTkToplevel):
         if pd.is_online(self.proc, self.name):
             if ender:
                 for s in range(27):
-                    self.proc.send(
+                    self.proc.send_quiet(
                         f"item replace entity {self.name} enderchest.{s} "
                         "with air")
             else:
-                self.proc.send(f"clear {self.name}")
+                self.proc.send_quiet(f"clear {self.name}")
         else:
             if not self.data:
                 return
@@ -394,7 +396,8 @@ class PlayerCard(ctk.CTkToplevel):
             return
         item, count = dlg.result
         if pd.is_online(self.proc, self.name):
-            if self.proc.send(f"give {self.name} minecraft:{item} {count}"):
+            if self.proc.send_quiet(
+                    f"give {self.name} minecraft:{item} {count}"):
                 self.status.configure(
                     text=f"→ give {self.name} {item} ×{count}")
             self.after(800, self.refresh)

@@ -610,6 +610,8 @@ class ServersTab(ctk.CTkFrame):
             self.console.tag_config(name, foreground=theme.c(color))
         self.console.configure(state="normal")
         for line in lines:
+            if line.startswith(sm.QUIET_MARK):
+                continue            # réponse de commande interne (list…)
             self.console.insert("end", line + "\n", tag or self._tag(line))
         if int(self.console.index("end-1c").split(".")[0]) > 6000:
             self.console.delete("1.0", "1000.0")

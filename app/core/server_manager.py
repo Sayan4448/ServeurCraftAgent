@@ -16,6 +16,22 @@ from .properties import write_server_properties
 
 META_FILE = "servercraft.json"
 STOP_TIMEOUT = 30
+
+# Préfixe des lignes « internes » (réponses des commandes envoyées par
+# l'app elle-même : list, data get, give, clear…). Le backlog les garde
+# (lecture par player_card/tracker) mais les consoles les sautent.
+QUIET_MARK = "\x01"
+
+# Réponses typiques des commandes internes, à masquer de la console.
+_QUIET_RESP = re.compile(
+    r"players online|following entity data:|Can't get|"
+    r"No entity was found|Unknown entity|"
+    r"Gave |Can't give|Can't clear|"
+    r"Cleared|No items were found|Replaced|Could not|"
+    r"Set the player's game mode|Set .*game mode|"
+    r"That player isn't online|No player was found|"
+    r"Nothing changed|That command does not exist|"
+    r"Unknown item|Too many items")
 # pas de fenêtre console noire pour java.exe quand l'app est packagée (GUI)
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
@@ -324,8 +340,10 @@ class ServerProcess:
         self.on_exit = None
         self.listeners = []          # callbacks (name, line) -> autonomie IA
         self.exit_listeners = []     # callbacks (name, code)
-        self.backlog = deque(maxlen=5000)
+        self.backlog = deque(maxlen=4000)
         self.seq = 0                 # nb total de lignes ajoutées
+        self._quiet = deque()        # commandes internes dont la réponse
+                                     # est masquée de la console (FIFO)
         self.tracker = PlayerTracker(name)
         self.exit_code = None
         self._starting = False       # démarrage en cours (Java, Popen…)
@@ -336,10 +354,13 @@ class ServerProcess:
         self.started_at = 0.0
         self._lock = threading.Lock()
 
-    def log(self, line: str) -> None:
-        """Ajoute une ligne à la console (thread-safe)."""
+    def log(self, line: str, quiet: bool = False) -> None:
+        """Ajoute une ligne à la console (thread-safe). Les lignes
+        `quiet` (réponses de commandes internes) sont préfixées d'un
+        marqueur et filtrées à l'affichage, mais restent dans le backlog
+        pour les lecteurs internes (`lines_since`, tracker)."""
         with self._lock:
-            self.backlog.append(line)
+            self.backlog.append(QUIET_MARK + line if quiet else line)
             self.seq += 1
 
     def lines_since(self, seen: int):
@@ -355,7 +376,7 @@ class ServerProcess:
         now = time.time()
         if self.ready and now - getattr(self, "_last_list", 0) >= every:
             self._last_list = now
-            self.send("list")
+            self.send_quiet("list")
 
     def stats(self) -> dict | None:
         """RAM (Mo) / CPU (% de la machine) / uptime du process Java."""
@@ -438,7 +459,7 @@ class ServerProcess:
             just_ready = not self.ready and "Done (" in line
             if just_ready:
                 self.ready = True
-            self.log(line)
+            self.log(line, quiet=self._consume_quiet(line))
             try:
                 self.tracker.feed(self.name, line)
             except Exception:
@@ -505,6 +526,25 @@ class ServerProcess:
                     cb(self.name, code)
                 except Exception:
                     pass
+
+    def _consume_quiet(self, line: str) -> bool:
+        """True si `line` est la réponse d'une commande interne (send_quiet).
+        Les commandes sont dépilées dans l'ordre ; les entrées trop
+        vieilles (>8 s, réponse jamais arrivée) sont purgées."""
+        now = time.time()
+        q = self._quiet
+        while q and now - q[0] > 8.0:
+            q.popleft()
+        if q and _QUIET_RESP.search(line):
+            q.popleft()
+            return True
+        return False
+
+    def send_quiet(self, command: str) -> bool:
+        """Comme send(), mais la réponse du serveur est masquée de la
+        console (utilisé pour les commandes internes de l'app)."""
+        self._quiet.append(time.time())
+        return self.send(command)
 
     def send(self, command: str) -> bool:
         if not self.is_running():

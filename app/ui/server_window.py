@@ -275,6 +275,8 @@ class ServerWindow(ctk.CTkToplevel):
     def _append_many(self, lines):
         self.console.configure(state="normal")
         for line in lines:
+            if line.startswith(sm.QUIET_MARK):
+                continue            # réponse de commande interne (list…)
             self.console.insert("end", line + "\n", self._tag(line))
         # limite la taille pour garder l'UI fluide
         if int(self.console.index("end-1c").split(".")[0]) > 6000:
