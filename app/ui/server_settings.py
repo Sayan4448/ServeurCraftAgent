@@ -7,13 +7,14 @@ from tkinter import messagebox
 
 import customtkinter as ctk
 
-from ..core import crossplay
+from ..core import crossplay, scheduler
 from ..core import server_manager as sm
 from ..core import tunnels as tunnels_mod
 from ..core.backups import DEFAULT_KEEP
 from ..core.properties import load_properties, update_properties
 from ..i18n import t
 from . import theme
+from .schedule_editor import ScheduleEditor
 from .tunnels_editor import TunnelsEditor
 from .uithread import ui_call
 
@@ -186,6 +187,17 @@ class ServerSettings(ctk.CTkToplevel):
                     str(meta.get("backup_keep", DEFAULT_KEEP)))
         self._hint(scroll, t("ss_bk_hint"))
 
+        # ------------------------------------------------ tâches planifiées
+        self._section(scroll, t("ss_sched"))
+        self._field(scroll, t("ss_restart_time"), "restart_time",
+                    meta.get("restart_time", ""))
+        self._hint(scroll, t("ss_restart_hint"))
+        sbox = ctk.CTkFrame(scroll, fg_color=theme.PANEL, corner_radius=8)
+        sbox.pack(fill="x", padx=4, pady=3)
+        self.schedule_editor = ScheduleEditor(
+            sbox, meta.get("scheduled_commands") or [])
+        self.schedule_editor.pack(fill="x", padx=10, pady=10)
+
         # ------------------------------------------------------------ bas
         self.status = ctk.CTkLabel(self, text="", text_color=theme.GREEN,
                                    font=(theme.FONT, 11))
@@ -276,6 +288,15 @@ class ServerSettings(ctk.CTkToplevel):
             self.free_entry.delete(0, "end")
 
     def _save(self):
+        restart_raw = self._widgets["restart_time"].get().strip()
+        restart_hm = scheduler.parse_hhmm(restart_raw)
+        try:
+            if restart_raw and not restart_hm:
+                raise ValueError(t("sch_bad_time", v=restart_raw))
+            tasks = self.schedule_editor.get()
+        except ValueError as e:
+            messagebox.showerror(t("ss_sched"), str(e), parent=self)
+            return
         changes = dict(self._free_props)
         for key, label, kind, _v in _PROPS:
             w = self._widgets[key]
@@ -319,6 +340,9 @@ class ServerSettings(ctk.CTkToplevel):
             self._widgets["backup_on_stop"].get())
         self.meta["backup_interval_min"] = self._int("backup_interval_min", 0)
         self.meta["backup_keep"] = self._int("backup_keep", DEFAULT_KEEP, 1)
+        self.meta["restart_time"] = (scheduler.fmt_hhmm(restart_hm)
+                                     if restart_hm else "")
+        self.meta["scheduled_commands"] = tasks
         self._write_meta()
         tunnels_mod.apply(self.dir, self.meta.get("loader", ""),
                           self.meta["tunnels"], java_port=self.meta["port"],

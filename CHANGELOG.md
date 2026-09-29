@@ -15,6 +15,13 @@
   avant), sauvegarde manuelle, suppression
 - Réglages dans ⚙ Config → « Sauvegardes »
 
+**Tâches planifiées** (⚙ Config → « Tâches planifiées »)
+- Redémarrage quotidien à heure fixe (HH:MM), annoncé en jeu
+  « redémarrage dans 5 min », 1 min et 10 s — sauvegarde avant
+  redémarrage si activée
+- Commandes planifiées personnalisées : « toutes les N min » ou « à
+  HH:MM » (say, save-all, weather…), tracées dans la console
+
 ## v0.7.0 — Release (2026-09-28)
 
 Version consolidée avant la 1.0. Reprend tout le contenu de la 0.5.5 :
