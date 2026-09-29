@@ -5,6 +5,7 @@
   1 min et 10 s avant
 - commandes planifiées `scheduled_commands` :
   {"cmd": "say …", "mode": "every" | "at", "value": "30" | "HH:MM"}
+- monitoring : échantillon RAM/CPU chaque seconde, TPS (Paper/Purpur)
 """
 import re
 import threading
@@ -16,6 +17,7 @@ from . import backups as backups_mod
 from . import server_manager as sm
 
 TICK = 1.0
+TPS_EVERY = 5
 # (secondes avant le redémarrage, message annoncé en jeu)
 RESTART_WARNINGS = ((300, "sch_warn_5m"), (60, "sch_warn_1m"),
                     (10, "sch_warn_10s"))
@@ -80,6 +82,7 @@ def _loop() -> None:
         now = time.time()
         for proc in list(sm.PROCESSES.values()):
             try:
+                _monitor(proc, now)
                 _tick(proc, now)
             except Exception:  # noqa: BLE001 — la boucle ne doit pas mourir
                 import traceback
@@ -95,6 +98,20 @@ def _state(proc) -> dict:
                             "restart_at": 0.0, "warned": set(),
                             "cmd_last": {}, "cmd_day": {}}
     return st
+
+
+def _monitor(proc, now: float) -> None:
+    """Échantillon RAM/CPU ; `tps` (réponse masquée) toutes les TPS_EVERY s
+    sur Paper/Purpur, seulement quand un graphique l'affiche."""
+    if not proc.is_running():
+        return
+    proc.sample()
+    if (proc.ready and not proc.stop_requested
+            and proc.meta.get("loader") in sm.TPS_LOADERS
+            and now - proc.tps_wanted < 10
+            and now - getattr(proc, "_tps_sent", 0) >= TPS_EVERY):
+        proc._tps_sent = now
+        proc.send_quiet("tps")
 
 
 def _tick(proc, now: float) -> None:

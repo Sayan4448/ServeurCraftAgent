@@ -2069,6 +2069,54 @@ _V8_CRASH = {
 for _lang, _vals in _V8_CRASH.items():
     STRINGS[_lang].update(_vals)
 
+# ------------------------------------------------ v0.8 : monitoring
+_V8_MONITOR = {
+    "fr": {
+        "mon_title": "Monitoring (2 dernières minutes)",
+        "mon_waiting": "Collecte des mesures…",
+        "mon_stopped": "Serveur arrêté",
+        "mon_setting": "Graphique de monitoring (RAM / CPU / TPS)",
+        "mon_setting_hint": "Courbes en temps réel dans le tableau de bord. Le TPS (Paper/Purpur) est lu via /tps toutes les 5 s, sans afficher la réponse dans la console. Mesures locales uniquement.",
+    },
+    "en": {
+        "mon_title": "Monitoring (last 2 minutes)",
+        "mon_waiting": "Collecting samples…",
+        "mon_stopped": "Server stopped",
+        "mon_setting": "Monitoring graph (RAM / CPU / TPS)",
+        "mon_setting_hint": "Real-time curves in the dashboard. TPS (Paper/Purpur) is read via /tps every 5 s without showing the reply in the console. Local measurements only.",
+    },
+    "ru": {
+        "mon_title": "Мониторинг (последние 2 минуты)",
+        "mon_waiting": "Сбор данных…",
+        "mon_stopped": "Сервер остановлен",
+        "mon_setting": "График мониторинга (ОЗУ / ЦП / TPS)",
+        "mon_setting_hint": "Графики в реальном времени на панели. TPS (Paper/Purpur) читается через /tps каждые 5 с, ответ не показывается в консоли. Только локальные измерения.",
+    },
+    "ja": {
+        "mon_title": "モニタリング（直近2分）",
+        "mon_waiting": "計測中…",
+        "mon_stopped": "サーバー停止中",
+        "mon_setting": "モニタリンググラフ（RAM / CPU / TPS）",
+        "mon_setting_hint": "ダッシュボードにリアルタイムのグラフを表示します。TPS（Paper/Purpur）は5秒ごとに /tps で取得し、応答はコンソールに表示しません。計測はローカルのみです。",
+    },
+    "es": {
+        "mon_title": "Monitorización (últimos 2 minutos)",
+        "mon_waiting": "Recopilando mediciones…",
+        "mon_stopped": "Servidor detenido",
+        "mon_setting": "Gráfico de monitorización (RAM / CPU / TPS)",
+        "mon_setting_hint": "Curvas en tiempo real en el panel. El TPS (Paper/Purpur) se lee con /tps cada 5 s sin mostrar la respuesta en la consola. Solo mediciones locales.",
+    },
+    "de": {
+        "mon_title": "Monitoring (letzte 2 Minuten)",
+        "mon_waiting": "Messwerte werden gesammelt…",
+        "mon_stopped": "Server gestoppt",
+        "mon_setting": "Monitoring-Diagramm (RAM / CPU / TPS)",
+        "mon_setting_hint": "Echtzeit-Kurven im Dashboard. Die TPS (Paper/Purpur) werden alle 5 s per /tps gelesen, ohne die Antwort in der Konsole anzuzeigen. Nur lokale Messungen.",
+    },
+}
+for _lang, _vals in _V8_MONITOR.items():
+    STRINGS[_lang].update(_vals)
+
 
 def get_lang() -> str:
     lang = load_settings().get("language", "fr")

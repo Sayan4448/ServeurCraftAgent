@@ -42,7 +42,11 @@ _QUIET_RESP = re.compile(
     r"Set the player's game mode|Set .*game mode|"
     r"That player isn't online|No player was found|"
     r"Nothing changed|That command does not exist|"
-    r"Unknown item|Too many items")
+    r"Unknown item|Too many items|TPS from last")
+# Monitoring : historique RAM/CPU (1 échantillon/s) et TPS (Paper/Purpur)
+HISTORY = 120
+TPS_LOADERS = ("paper", "purpur")
+_TPS_LINE = re.compile(r"TPS from last 1m, 5m, 15m:\s*\*?([\d.]+)")
 # Réponses de save-off / save-all / save-on, masquées pendant une sauvegarde
 # (leur nombre varie selon le loader et les dimensions).
 _SAVE_RESP = re.compile(
@@ -416,6 +420,12 @@ class ServerProcess:
         self._stop_thread = None
         self.crashes = deque(maxlen=20)  # horodatages des crashs
         self.crash_prompt = False    # l'UI doit proposer un redémarrage
+        self.history = deque(maxlen=HISTORY)  # (t, ram_mb, cpu, tps)
+        self.tps = None
+        self._tps_at = 0.0
+        self.tps_wanted = 0.0        # graphique affiché -> /tps interrogé
+        self._sample = None
+        self._ps_lock = threading.Lock()
         self._lock = threading.Lock()
         self._stdin_lock = threading.Lock()
 
@@ -444,21 +454,38 @@ class ServerProcess:
             self.send_quiet("list")
 
     def stats(self) -> dict | None:
-        """RAM (Mo) / CPU (% de la machine) / uptime du process Java."""
-        if not self.is_running():
-            self._ps = None
-            return None
-        try:
-            import psutil
-            if self._ps is None or self._ps.pid != self.proc.pid:
-                self._ps = psutil.Process(self.proc.pid)
-                self._ps.cpu_percent(None)       # amorce la mesure
-            mem = self._ps.memory_info().rss / (1024 * 1024)
-            cpu = self._ps.cpu_percent(None) / (psutil.cpu_count() or 1)
-            return {"ram_mb": mem, "cpu": min(cpu, 100.0),
-                    "uptime": time.time() - self.started_at}
-        except Exception:  # noqa: BLE001 — process en train de s'arrêter
-            return None
+        """RAM (Mo) / CPU (% de la machine) / uptime / TPS du process Java.
+        Renvoie le dernier échantillon du planificateur s'il est récent :
+        cpu_percent() mesure depuis l'appel précédent, plusieurs lecteurs
+        se voleraient la mesure."""
+        s = self._sample
+        if s and self.is_running() and time.time() - s["at"] < 2.5:
+            return s
+        return self.sample()
+
+    def sample(self) -> dict | None:
+        """Mesure et ajoute un point à `history` (appelé 1/s par le
+        planificateur)."""
+        with self._ps_lock:
+            if not self.is_running():
+                self._ps = self._sample = None
+                return None
+            try:
+                import psutil
+                if self._ps is None or self._ps.pid != self.proc.pid:
+                    self._ps = psutil.Process(self.proc.pid)
+                    self._ps.cpu_percent(None)       # amorce la mesure
+                mem = self._ps.memory_info().rss / (1024 * 1024)
+                cpu = self._ps.cpu_percent(None) / (psutil.cpu_count() or 1)
+            except Exception:  # noqa: BLE001 — process en train de s'arrêter
+                return None
+            now = time.time()
+            tps = self.tps if now - self._tps_at < 15 else None
+            s = {"ram_mb": mem, "cpu": min(cpu, 100.0), "tps": tps,
+                 "uptime": now - self.started_at, "at": now}
+            self.history.append((now, mem, s["cpu"], tps))
+            self._sample = s
+            return s
 
     def reload_meta(self) -> None:
         try:
@@ -513,7 +540,8 @@ class ServerProcess:
             creationflags=NO_WINDOW,
         )
         self.started_at = time.time()
-        self._ps = None
+        self._ps = self._sample = self.tps = None
+        self.history.clear()
         threading.Thread(target=self._reader, args=(self.proc,),
                          daemon=True).start()
         threading.Thread(target=self._waiter, args=(self.proc,),
@@ -527,6 +555,10 @@ class ServerProcess:
                 self.ready = True
             if _STOP_LINE.search(line):
                 self.stop_requested = True
+            m = _TPS_LINE.search(line)
+            if m:
+                self.tps, self._tps_at = min(float(m.group(1)), 20.0), \
+                    time.time()
             quiet = self._consume_quiet(line) or (
                 time.time() < self.hide_saves_until
                 and bool(_SAVE_RESP.search(line)))

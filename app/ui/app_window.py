@@ -203,6 +203,20 @@ class SettingsDialog(ctk.CTkToplevel):
                      wraplength=440, justify="left").pack(
             anchor="w", padx=14, pady=(0, 8))
 
+        # monitoring
+        row = ctk.CTkFrame(card, fg_color="transparent")
+        row.pack(fill="x", padx=14, pady=6)
+        self.mon_switch = ctk.CTkSwitch(
+            row, text=t("mon_setting"), text_color=theme.TEXT,
+            progress_color=theme.ACCENT)
+        if self.settings.get("monitoring", True):
+            self.mon_switch.select()
+        self.mon_switch.pack(side="left")
+        ctk.CTkLabel(card, text=t("mon_setting_hint"),
+                     font=(theme.FONT, 10), text_color=theme.MUTED,
+                     wraplength=440, justify="left").pack(
+            anchor="w", padx=14, pady=(0, 8))
+
         # agent IA (bêta)
         row = ctk.CTkFrame(card, fg_color="transparent")
         row.pack(fill="x", padx=14, pady=6)
@@ -320,6 +334,10 @@ class SettingsDialog(ctk.CTkToplevel):
         self.settings["theme"] = ("light" if self.theme_seg.get()
                                   == t("theme_light") else "dark")
         self.settings["server_interface"] = bool(self.iface_switch.get())
+        self.settings["monitoring"] = bool(self.mon_switch.get())
+        if hasattr(self.master, "servers_tab"):
+            self.master.servers_tab.set_monitoring(
+                self.settings["monitoring"])
         self.settings["ai_beta"] = bool(self.ai_switch.get())
         self.settings["curseforge_api_key"] = self.cf_entry.get().strip()
         save_settings(self.settings)

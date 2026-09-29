@@ -29,6 +29,7 @@ DEFAULT_SETTINGS = {
     "language": "fr",                   # fr | en | ru | ja | es | de
     "theme": "dark",                    # "dark" | "light"
     "server_interface": True,           # fenêtre d'administration au lancement
+    "monitoring": True,
     "discord_webhook": "",              # vide = aucune notification envoyée
     "discord_events": {"started": True, "stopped": True, "crashed": True,
                        "join": True, "leave": True},

@@ -48,6 +48,14 @@
   puis retour à la proposition ; pas de relance auto si le serveur plante
   pendant son démarrage
 
+**Monitoring** (⚙ Paramètres → « Graphique de monitoring »)
+- Graphique temps réel RAM / CPU des 2 dernières minutes dans le tableau
+  de bord (1 mesure par seconde, thème clair/sombre)
+- TPS pour Paper/Purpur via `/tps` toutes les 5 s — réponse masquée de la
+  console, interrogé seulement quand le graphique est affiché
+- Une seule source de mesure CPU (le tableau de bord et la fenêtre serveur
+  ne se volent plus la mesure `cpu_percent`)
+
 ## v0.7.0 — Release (2026-09-28)
 
 Version consolidée avant la 1.0. Reprend tout le contenu de la 0.5.5 :

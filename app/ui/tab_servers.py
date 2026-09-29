@@ -5,6 +5,7 @@ dans `ServerProcess` par `_pump()` (toutes les 150 ms, thread Tk).
 """
 import subprocess
 import threading
+import time
 import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox
@@ -23,6 +24,7 @@ from ..i18n import t
 from . import theme
 from .backups_dialog import BackupsDialog
 from .mods_manager import ModsManager
+from .monitor_graph import MonitorGraph
 from .players_panel import BansView, OpsView, ctx_for
 from .server_settings import ServerSettings
 from .server_window import ServerWindow
@@ -195,6 +197,10 @@ class ServersTab(ctk.CTkFrame):
                                self.st_uptime)):
             w.grid(row=0, column=i, sticky="nsew",
                    padx=(0 if i == 0 else 5, 0 if i == 3 else 5))
+        self.monitor = MonitorGraph(stats)
+        self.monitor.grid(row=1, column=0, columnspan=4, sticky="ew",
+                          pady=(10, 0))
+        self.set_monitoring(load_settings().get("monitoring", True))
 
         # ---------------------------------------------------- actions
         acts = ctk.CTkFrame(col, fg_color="transparent")
@@ -509,6 +515,22 @@ class ServersTab(ctk.CTkFrame):
         n = len(proc.tracker.players) if proc else 0
         mx = self._max_players or 20
         self.st_players.set(f"{n} / {mx}", n / mx, " ")
+        if self._monitoring:
+            show_tps = bool(proc) and proc.meta.get("loader") in \
+                sm.TPS_LOADERS
+            if show_tps and st:
+                proc.tps_wanted = time.time()
+            self.monitor.set(proc.history if proc else [],
+                             limit_gb * 1024, show_tps, bool(st))
+
+    def set_monitoring(self, on: bool):
+        """Affiche / masque le graphique (⚙ Paramètres → Monitoring)."""
+        self._monitoring = bool(on)
+        if self._monitoring:
+            self.monitor.grid()
+            self._update_stats()
+        else:
+            self.monitor.grid_remove()
 
     # ============================================================ actions
     def _start(self):
