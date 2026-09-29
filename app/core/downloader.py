@@ -153,19 +153,22 @@ def purpur_download(version: str):
     return url, f"purpur-{version}.jar", "jar"
 
 
-def fabric_download(version: str):
-    loaders = _get_json(f"{FABRIC_META}/loader/{version}")
-    if not loaders:
-        raise DownloadError(f"Aucun loader Fabric pour {version}")
-    loader_ver = loaders[0]["loader"]["version"]
+def fabric_download(version: str, loader_ver: str | None = None):
+    if not loader_ver:
+        loaders = _get_json(f"{FABRIC_META}/loader/{version}")
+        if not loaders:
+            raise DownloadError(f"Aucun loader Fabric pour {version}")
+        loader_ver = loaders[0]["loader"]["version"]
     installer = _get_json(f"{FABRIC_META}/installer")[0]["version"]
     url = f"{FABRIC_META}/loader/{version}/{loader_ver}/{installer}/server/jar"
     return url, f"fabric-server-{version}.jar", "jar"
 
 
-def forge_download(mc_version: str):
-    promos = _get_json(FORGE_PROMOS).get("promos", {})
-    forge_ver = promos.get(f"{mc_version}-recommended") or promos.get(f"{mc_version}-latest")
+def forge_download(mc_version: str, forge_ver: str | None = None):
+    if not forge_ver:
+        promos = _get_json(FORGE_PROMOS).get("promos", {})
+        forge_ver = promos.get(f"{mc_version}-recommended") or \
+            promos.get(f"{mc_version}-latest")
     if not forge_ver:
         raise DownloadError(f"Aucun build Forge pour {mc_version}")
     # Les versions 1.20.3+ n'ont pas de préfixe MC dans le nom de fichier ? Si :
@@ -175,16 +178,16 @@ def forge_download(mc_version: str):
     return url, filename, "installer"
 
 
-def neoforge_download(mc_version: str):
-    r = requests.get(NEOFORGE_META, headers=_UA, timeout=30)
-    r.raise_for_status()
-    root = ET.fromstring(r.text)
-    prefix = _mc_to_neoforge_prefix(mc_version)
-    best = None
-    for v in root.iter("version"):
-        ver = v.text.strip()
-        if ver.split("-")[0].startswith(prefix + "."):
-            best = ver
+def neoforge_download(mc_version: str, best: str | None = None):
+    if not best:
+        r = requests.get(NEOFORGE_META, headers=_UA, timeout=30)
+        r.raise_for_status()
+        root = ET.fromstring(r.text)
+        prefix = _mc_to_neoforge_prefix(mc_version)
+        for v in root.iter("version"):
+            ver = v.text.strip()
+            if ver.split("-")[0].startswith(prefix + "."):
+                best = ver
     if not best:
         raise DownloadError(f"Aucun build NeoForge pour {mc_version}")
     filename = f"neoforge-{best}-installer.jar"
@@ -198,16 +201,24 @@ def mohist_download(mc_version: str):
     return url, f"mohist-{mc_version}-{build['id']}.jar", "jar"
 
 
-def get_download(loader: str, mc_version: str):
-    """Retourne (url, nom_fichier, kind) où kind vaut 'jar' ou 'installer'."""
-    return {
+PINNABLE = ("fabric", "forge", "neoforge")   # version du loader imposable
+
+
+def get_download(loader: str, mc_version: str,
+                 loader_version: str | None = None):
+    """Retourne (url, nom_fichier, kind) où kind vaut 'jar' ou 'installer'.
+    `loader_version` (modpacks) : version exacte de Fabric/Forge/NeoForge."""
+    fn = {
         "paper": paper_download,
         "purpur": purpur_download,
         "fabric": fabric_download,
         "forge": forge_download,
         "neoforge": neoforge_download,
         "mohist": mohist_download,
-    }[loader](mc_version)
+    }[loader]
+    if loader_version and loader in PINNABLE:
+        return fn(mc_version, loader_version)
+    return fn(mc_version)
 
 
 # ---------------------------------------------------------------- téléchargement

@@ -10,6 +10,7 @@ from pathlib import Path
 import requests
 
 from ..config import RUNTIMES_DIR, load_settings
+from ..i18n import t
 
 _JAVA_EXE = "java.exe" if os.name == "nt" else "java"
 
@@ -43,11 +44,7 @@ def _check_java(java_path: Path):
         return None
 
 
-def find_java():
-    """Cherche un Java utilisable : réglage utilisateur, JAVA_HOME, PATH, runtimes locaux.
-
-    Retourne (chemin, version_majeure) ou (None, None).
-    """
+def _candidates(all_path: bool = False) -> list:
     candidates = []
 
     custom = load_settings().get("java_path", "").strip()
@@ -61,17 +58,41 @@ def find_java():
     which = shutil.which("java")
     if which:
         candidates.append(Path(which))
+    if all_path:              # tous les java du PATH, pas seulement le 1er
+        for d in os.environ.get("PATH", "").split(os.pathsep):
+            if d.strip():
+                candidates.append(Path(d.strip()) / _JAVA_EXE)
 
     if RUNTIMES_DIR.exists():
         for rt in sorted(RUNTIMES_DIR.iterdir()):
             candidates.append(rt / "bin" / _JAVA_EXE)
+    return candidates
 
-    for cand in candidates:
-        if cand.exists():
-            major = _check_java(cand)
-            if major:
-                return cand, major
+
+def find_java(lo: int | None = None, hi: int | None = None):
+    """Cherche un Java utilisable : réglage utilisateur, JAVA_HOME, PATH, runtimes locaux.
+    Avec `lo`/`hi`, seul un Java de version majeure comprise entre les deux
+    est retenu (tous les java du PATH sont alors essayés).
+
+    Retourne (chemin, version_majeure) ou (None, None).
+    """
+    seen = set()
+    for cand in _candidates(all_path=hi is not None):
+        key = os.path.normcase(str(cand))
+        if key in seen or not cand.exists():
+            continue
+        seen.add(key)
+        major = _check_java(cand)
+        if major and (hi is None or (lo or 0) <= major <= hi):
+            return cand, major
     return None, None
+
+
+def pinned_java_range(mc_version: str) -> tuple:
+    """Java accepté pour un loader moddé de version imposée (modpack) : les
+    anciens Fabric/Forge/NeoForge ne lisent pas les classes des Java récents."""
+    need = required_java_major(mc_version)
+    return need, max(need, 21)
 
 
 def required_java_major(mc_version: str) -> int:
@@ -99,8 +120,18 @@ def required_java_major(mc_version: str) -> int:
     return 8
 
 
-def ensure_java(mc_version: str = "1.21", log=print) -> Path:
-    """Retourne un java compatible, en téléchargeant un JRE Temurin si besoin."""
+def ensure_java(mc_version: str = "1.21", log=print,
+                pinned: bool = False) -> Path:
+    """Retourne un java compatible, en téléchargeant un JRE Temurin si besoin.
+    `pinned` : loader moddé de version imposée → Java borné (pinned_java_range)."""
+    if pinned:
+        lo, hi = pinned_java_range(mc_version)
+        found, major = find_java(lo, hi)
+        if found:
+            log(f"Java détecté : {found} (version {major})")
+            return found
+        log(t("java_pinned_dl", lo=lo, hi=hi, target=lo))
+        return download_jre(lo, log=log)
     found, major = find_java()
     need = required_java_major(mc_version)
     if found and major >= need:

@@ -22,6 +22,16 @@
 - Commandes planifiées personnalisées : « toutes les N min » ou « à
   HH:MM » (say, save-all, weather…), tracées dans la console
 
+**Créer un serveur depuis un modpack** (Créateur → « 📦 Depuis un modpack… »)
+- `.mrpack` (Modrinth) et zip CurseForge (`manifest.json`) : loader,
+  version de Minecraft et **version exacte du loader** (Fabric, Forge,
+  NeoForge) reprises du pack — repli sur la dernière si introuvable
+- Mods serveur téléchargés, mods client ignorés, configs du pack
+  (`overrides/`, `server-overrides/`) copiées
+- Java adapté aux anciens loaders : Java borné (ex. 21 pour MC 1.21)
+  cherché parmi tous les Java installés, sinon JRE téléchargé — Java 25
+  faisait planter Fabric Loader 0.16
+
 ## v0.7.0 — Release (2026-09-28)
 
 Version consolidée avant la 1.0. Reprend tout le contenu de la 0.5.5 :

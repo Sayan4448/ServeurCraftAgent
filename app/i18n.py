@@ -1805,6 +1805,90 @@ _V8_SCHED = {
 for _lang, _vals in _V8_SCHED.items():
     STRINGS[_lang].update(_vals)
 
+# ------------------------------------------- v0.8 : serveur depuis modpack
+_V8_PACK = {
+    "fr": {
+        "cre_from_pack": "📦 Depuis un modpack…",
+        "cre_pack_hint": "Importe un .mrpack (Modrinth) ou un zip CurseForge : loader, version et mods serveur configurés automatiquement.",
+        "cre_pack_ready": "Loader et version imposés par le modpack. Les mods client (rendu, minimap…) seront ignorés, les configs du pack copiées.",
+        "cre_pack_noinfo": "Ce modpack n'indique pas son loader ou sa version : choisis-les ci-dessous.",
+        "cre_pack_clear": "Retirer", "cre_pack_reading": "Lecture…",
+        "cre_pack_err": "Modpack illisible : {e}",
+        "cre_pack_need_cf": "Ce modpack CurseForge nécessite une clé API CurseForge (⚙ Paramètres).",
+        "mpc_log_install": "— Modpack « {name} » : installation des mods serveur —",
+        "mpc_loader_ver": "Version du loader imposée par le modpack : {loader} {ver}",
+        "mpc_pin_fallback": "⚠ Version {ver} du loader introuvable : utilisation de la plus récente.",
+        "java_pinned_dl": "Loader du modpack : Java {lo} à {hi} requis (les Java plus récents le font planter). Téléchargement d'un JRE {target}…",
+    },
+    "en": {
+        "cre_from_pack": "📦 From a modpack…",
+        "cre_pack_hint": "Import a .mrpack (Modrinth) or a CurseForge zip: loader, version and server mods are set up automatically.",
+        "cre_pack_ready": "Loader and version set by the modpack. Client mods (rendering, minimap…) are skipped, the pack's configs are copied.",
+        "cre_pack_noinfo": "This modpack doesn't state its loader or version: pick them below.",
+        "cre_pack_clear": "Remove", "cre_pack_reading": "Reading…",
+        "cre_pack_err": "Unreadable modpack: {e}",
+        "cre_pack_need_cf": "This CurseForge modpack needs a CurseForge API key (⚙ Settings).",
+        "mpc_log_install": "— Modpack “{name}”: installing server mods —",
+        "mpc_loader_ver": "Loader version required by the modpack: {loader} {ver}",
+        "mpc_pin_fallback": "⚠ Loader version {ver} not found: using the latest one.",
+        "java_pinned_dl": "Modpack loader: Java {lo} to {hi} required (newer Java versions crash it). Downloading a JRE {target}…",
+    },
+    "ru": {
+        "cre_from_pack": "📦 Из сборки…",
+        "cre_pack_hint": "Импортируй .mrpack (Modrinth) или zip CurseForge: загрузчик, версия и серверные моды настроятся сами.",
+        "cre_pack_ready": "Загрузчик и версия заданы сборкой. Клиентские моды (рендер, миникарта…) пропускаются, конфиги сборки копируются.",
+        "cre_pack_noinfo": "Сборка не указывает загрузчик или версию: выбери их ниже.",
+        "cre_pack_clear": "Убрать", "cre_pack_reading": "Чтение…",
+        "cre_pack_err": "Не удалось прочитать сборку: {e}",
+        "cre_pack_need_cf": "Для сборки CurseForge нужен API-ключ CurseForge (⚙ Параметры).",
+        "mpc_log_install": "— Сборка «{name}»: установка серверных модов —",
+        "mpc_loader_ver": "Версия загрузчика из сборки: {loader} {ver}",
+        "mpc_pin_fallback": "⚠ Версия загрузчика {ver} не найдена: используется последняя.",
+        "java_pinned_dl": "Загрузчик сборки: нужна Java от {lo} до {hi} (на более новых он падает). Загрузка JRE {target}…",
+    },
+    "ja": {
+        "cre_from_pack": "📦 MODパックから…",
+        "cre_pack_hint": ".mrpack（Modrinth）または CurseForge の zip をインポート：ローダー・バージョン・サーバーMODを自動設定。",
+        "cre_pack_ready": "ローダーとバージョンはMODパックで指定済み。クライアントMOD（描画・ミニマップ等）はスキップし、パックの設定をコピーします。",
+        "cre_pack_noinfo": "このMODパックはローダーまたはバージョンを指定していません：下で選択してください。",
+        "cre_pack_clear": "解除", "cre_pack_reading": "読み込み中…",
+        "cre_pack_err": "MODパックを読み込めません: {e}",
+        "cre_pack_need_cf": "この CurseForge MODパックには CurseForge APIキーが必要です（⚙ 設定）。",
+        "mpc_log_install": "— MODパック「{name}」: サーバーMODを導入中 —",
+        "mpc_loader_ver": "MODパック指定のローダー: {loader} {ver}",
+        "mpc_pin_fallback": "⚠ ローダー {ver} が見つかりません：最新版を使用します。",
+        "java_pinned_dl": "MODパックのローダー: Java {lo}〜{hi} が必要です（新しいJavaではクラッシュします）。JRE {target} をダウンロード中…",
+    },
+    "es": {
+        "cre_from_pack": "📦 Desde un modpack…",
+        "cre_pack_hint": "Importa un .mrpack (Modrinth) o un zip de CurseForge: loader, versión y mods de servidor configurados automáticamente.",
+        "cre_pack_ready": "Loader y versión definidos por el modpack. Los mods de cliente (render, minimapa…) se omiten y se copian las configs del pack.",
+        "cre_pack_noinfo": "Este modpack no indica su loader o versión: elígelos abajo.",
+        "cre_pack_clear": "Quitar", "cre_pack_reading": "Leyendo…",
+        "cre_pack_err": "Modpack ilegible: {e}",
+        "cre_pack_need_cf": "Este modpack de CurseForge necesita una clave API de CurseForge (⚙ Ajustes).",
+        "mpc_log_install": "— Modpack «{name}»: instalando mods de servidor —",
+        "mpc_loader_ver": "Versión del loader exigida por el modpack: {loader} {ver}",
+        "mpc_pin_fallback": "⚠ Versión {ver} del loader no encontrada: se usa la más reciente.",
+        "java_pinned_dl": "Loader del modpack: requiere Java {lo} a {hi} (con Java más recientes se bloquea). Descargando un JRE {target}…",
+    },
+    "de": {
+        "cre_from_pack": "📦 Aus einem Modpack…",
+        "cre_pack_hint": "Importiere ein .mrpack (Modrinth) oder ein CurseForge-Zip: Loader, Version und Server-Mods werden automatisch eingerichtet.",
+        "cre_pack_ready": "Loader und Version vom Modpack vorgegeben. Client-Mods (Rendering, Minimap…) werden übersprungen, die Configs des Packs kopiert.",
+        "cre_pack_noinfo": "Dieses Modpack gibt Loader oder Version nicht an: wähle sie unten aus.",
+        "cre_pack_clear": "Entfernen", "cre_pack_reading": "Wird gelesen…",
+        "cre_pack_err": "Modpack nicht lesbar: {e}",
+        "cre_pack_need_cf": "Dieses CurseForge-Modpack braucht einen CurseForge-API-Schlüssel (⚙ Einstellungen).",
+        "mpc_log_install": "— Modpack „{name}“: Server-Mods werden installiert —",
+        "mpc_loader_ver": "Vom Modpack vorgegebene Loader-Version: {loader} {ver}",
+        "mpc_pin_fallback": "⚠ Loader-Version {ver} nicht gefunden: die neueste wird verwendet.",
+        "java_pinned_dl": "Modpack-Loader: Java {lo} bis {hi} erforderlich (neuere Java-Versionen bringen ihn zum Absturz). JRE {target} wird heruntergeladen…",
+    },
+}
+for _lang, _vals in _V8_PACK.items():
+    STRINGS[_lang].update(_vals)
+
 
 def get_lang() -> str:
     lang = load_settings().get("language", "fr")

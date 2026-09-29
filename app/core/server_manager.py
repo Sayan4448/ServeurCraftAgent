@@ -113,19 +113,35 @@ def create_server(options: dict, progress_cb=None, log=print) -> dict:
     try:
         # 1) Java
         log("— Vérification de Java —")
-        java = java_mod.ensure_java(mc_version, log=log)
+        pinned = bool(options.get("loader_version")) and \
+            loader in downloader.PINNABLE
+        java = java_mod.ensure_java(mc_version, log=log, pinned=pinned)
 
         # 2) server.jar / installeur
         log(f"— Résolution {loader} {mc_version} —")
-        url, filename, kind = downloader.get_download(loader, mc_version)
+        loader_version = (options.get("loader_version")
+                          if loader in downloader.PINNABLE else None)
+        if loader_version:
+            log(t("mpc_loader_ver", loader=loader, ver=loader_version))
+        try:
+            url, filename, kind = downloader.get_download(
+                loader, mc_version, loader_version)
+            target = path / ("server.jar" if kind == "jar" else filename)
+            log(f"Téléchargement : {filename}")
+            downloader.download_file(url, target, pct)
+        except Exception:
+            if not loader_version:
+                raise
+            log(t("mpc_pin_fallback", ver=loader_version))
+            loader_version = None
+            url, filename, kind = downloader.get_download(loader, mc_version)
+            target = path / ("server.jar" if kind == "jar" else filename)
+            log(f"Téléchargement : {filename}")
+            downloader.download_file(url, target, pct)
         meta_jar = "server.jar"
         launch_args = ""
-        if kind == "jar":
-            log(f"Téléchargement : {filename}")
-            downloader.download_file(url, path / "server.jar", pct)
-        else:
-            log(f"Téléchargement de l'installeur : {filename}")
-            installer = downloader.download_file(url, path / filename, pct)
+        if kind != "jar":
+            installer = target
             log("Exécution de l'installeur (--installServer), patientez…")
             _run_installer(java, installer, path, log)
             launch_args = _find_args_file(path)
@@ -203,6 +219,18 @@ def create_server(options: dict, progress_cb=None, log=print) -> dict:
                (sub == "plugins" and mods_mod.supports_plugins(loader)):
                 (path / sub).mkdir(exist_ok=True)
 
+        # 7b) modpack : mods serveur (les mods client sont ignorés) + configs
+        pack = options.get("modpack")
+        if pack:
+            from . import modpack as modpack_mod
+            log(t("mpc_log_install", name=pack.get("name", "")))
+            plan = modpack_mod.plan(pack, cf_key=options.get("cf_key", ""),
+                                    log=log)
+            res = modpack_mod.apply_plan(plan, path, include_client=False,
+                                         log=log)
+            log(t("mp_done", n=res["installed"], c=res["client_skipped"],
+                  f=res["configs"]))
+
         # 8) métadonnées
         meta = {
             "name": name,
@@ -219,6 +247,10 @@ def create_server(options: dict, progress_cb=None, log=print) -> dict:
             "launch_args": launch_args,
             "created": time.strftime("%Y-%m-%d %H:%M"),
         }
+        if loader_version:
+            meta["loader_version"] = loader_version
+        if pack:
+            meta["modpack"] = pack.get("name", "")
         (path / META_FILE).write_text(json.dumps(meta, indent=2), encoding="utf-8")
         meta["summary"] = summary
         log(f"✔ Serveur '{name}' prêt.")
@@ -278,7 +310,9 @@ _ENC_FLAGS = ["-Dfile.encoding=UTF-8", "-Dstdout.encoding=UTF-8",
 
 def build_launch_command(path: Path, meta: dict, log=print) -> list:
     # ensure_java vérifie la version requise et télécharge un JRE si besoin
-    java = java_mod.ensure_java(meta["mc_version"], log=log)
+    pinned = bool(meta.get("loader_version")) and \
+        meta.get("loader") in downloader.PINNABLE
+    java = java_mod.ensure_java(meta["mc_version"], log=log, pinned=pinned)
     ram = int(meta.get("ram_mb", 4096))
     if meta.get("launch_args"):
         # Réplique run.bat : java @user_jvm_args.txt @.../win_args.txt nogui

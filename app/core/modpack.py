@@ -62,7 +62,7 @@ def read_pack(path) -> dict:
     """Détecte le format et lit MC / loader / nom. Ne télécharge rien."""
     p = Path(path)
     info = {"path": p, "name": p.stem, "mc_version": None, "loader": None,
-            "format": "jars"}
+            "loader_version": None, "format": "jars"}
     if p.is_dir():
         info["format"] = "folder"
         mmc = p / "mmc-pack.json"
@@ -75,6 +75,7 @@ def read_pack(path) -> dict:
                         info["mc_version"] = comp.get("version")
                     elif uid in _PRISM_LOADERS:
                         info["loader"] = _PRISM_LOADERS[uid]
+                        info["loader_version"] = comp.get("version")
             except (ValueError, KeyError, OSError):
                 pass
         return info
@@ -90,6 +91,7 @@ def read_pack(path) -> dict:
             for k, v in _MR_LOADERS.items():
                 if k in deps:
                     info["loader"] = v
+                    info["loader_version"] = deps[k]
             info["files"] = idx.get("files", [])
         elif "manifest.json" in names:
             man = json.loads(z.read("manifest.json"))
@@ -98,9 +100,10 @@ def read_pack(path) -> dict:
                         mc_version=mc.get("version"),
                         overrides=man.get("overrides", "overrides"))
             for ml in mc.get("modLoaders", []):
-                lid = ml.get("id", "").split("-")[0]
+                lid, _, lver = ml.get("id", "").partition("-")
                 if lid in ("forge", "neoforge", "fabric"):
                     info["loader"] = lid
+                    info["loader_version"] = lver or None
                     if ml.get("primary"):
                         break
             info["files"] = man.get("files", [])

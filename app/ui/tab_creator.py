@@ -4,6 +4,7 @@ from tkinter import messagebox
 
 import customtkinter as ctk
 
+from ..config import load_settings
 from ..core import downloader, mods as mods_mod, server_manager as sm
 from ..i18n import t
 from . import theme
@@ -29,10 +30,38 @@ class CreatorTab(ctk.CTkFrame):
         form.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
         form.grid_columnconfigure(1, weight=1)
 
-        ctk.CTkLabel(form, text=t("cre_new"),
+        head = ctk.CTkFrame(form, fg_color="transparent")
+        head.grid(row=0, column=0, columnspan=2, sticky="ew", padx=16,
+                  pady=(14, 10))
+        top = ctk.CTkFrame(head, fg_color="transparent")
+        top.pack(fill="x")
+        ctk.CTkLabel(top, text=t("cre_new"),
                      font=(theme.FONT, 16, "bold"),
-                     text_color=theme.TEXT).grid(
-            row=0, column=0, columnspan=2, sticky="w", padx=16, pady=(14, 10))
+                     text_color=theme.TEXT).pack(side="left")
+        self.pack_btn = ctk.CTkButton(
+            top, text=t("cre_from_pack"), height=30,
+            fg_color="transparent", border_width=1,
+            border_color=theme.ACCENT, text_color=theme.ACCENT,
+            hover_color=theme.PANEL_2, command=self._pick_pack)
+        self.pack_btn.pack(side="right")
+        self._pack = None
+        self.pack_bar = ctk.CTkFrame(head, fg_color=theme.PANEL_2,
+                                     corner_radius=8)
+        self.pack_lbl = ctk.CTkLabel(
+            self.pack_bar, text="", font=(theme.FONT, 12, "bold"),
+            text_color=theme.TEXT, anchor="w", justify="left",
+            wraplength=420)
+        self.pack_lbl.pack(side="left", fill="x", expand=True, padx=10,
+                           pady=6)
+        ctk.CTkButton(self.pack_bar, text="✕ " + t("cre_pack_clear"),
+                      width=90, height=26, fg_color=theme.PANEL,
+                      hover_color=theme.RED, text_color=theme.TEXT,
+                      command=self._clear_pack).pack(side="right", padx=8)
+        self.pack_hint = ctk.CTkLabel(
+            head, text=t("cre_pack_hint"), font=(theme.FONT, 10),
+            text_color=theme.MUTED, anchor="w", justify="left",
+            wraplength=480)
+        self.pack_hint.pack(fill="x", pady=(4, 0))
 
         def label(r, text):
             ctk.CTkLabel(form, text=text, text_color=theme.MUTED,
@@ -222,6 +251,72 @@ class CreatorTab(ctk.CTkFrame):
             versions = [t("none_f")]
         self.version_menu.configure(values=versions)
         self.version_menu.set(versions[0])
+        if self._pack and self._pack.get("mc_version"):
+            self.version_menu.set(self._pack["mc_version"])
+
+    # ----------------------------------------------------------------- modpack
+
+    def _pick_pack(self):
+        if self._creating:
+            return
+        from .mods_manager import pick_modpack
+        path = pick_modpack(self.winfo_toplevel())
+        if not path:
+            return
+        self.pack_btn.configure(state="disabled", text=t("cre_pack_reading"))
+
+        def work():                   # thread : lecture du zip
+            from ..core import modpack
+            try:
+                ui_call(self, self._pack_loaded, modpack.read_pack(path), None)
+            except Exception as e:  # noqa: BLE001
+                ui_call(self, self._pack_loaded, None, e)
+        threading.Thread(target=work, daemon=True).start()
+
+    def _pack_loaded(self, pack, err):
+        self.pack_btn.configure(state="normal", text=t("cre_from_pack"))
+        if err:
+            messagebox.showerror("Modpack", t("cre_pack_err", e=err))
+            return
+        if pack["format"] == "curseforge" and \
+                not load_settings().get("curseforge_api_key"):
+            messagebox.showwarning("Modpack", t("cre_pack_need_cf"))
+            return
+        self._pack = pack
+        loader, mc = pack.get("loader"), pack.get("mc_version")
+        if loader in downloader.LOADER_LABELS:
+            self.loader_menu.set(downloader.LOADER_LABELS[loader])
+            self._load_versions()
+        if mc:
+            self.version_menu.set(mc)
+        locked = bool(loader and mc)
+        for w in (self.loader_menu, self.version_menu):
+            w.configure(state="disabled" if locked else "normal")
+        if not self.name_entry.get().strip():
+            self.name_entry.insert(0, sm._slug(pack.get("name") or "modpack"))
+        if self.ram_entry.get().strip() == "4":
+            self.ram_entry.delete(0, "end")
+            self.ram_entry.insert(0, "6")
+        parts = [pack.get("name") or "modpack"]
+        if loader:
+            parts.append(downloader.LOADER_LABELS.get(loader, loader)
+                         .split(" (")[0] + (f" {pack['loader_version']}"
+                                            if pack.get("loader_version")
+                                            else ""))
+        if mc:
+            parts.append(f"MC {mc}")
+        self.pack_lbl.configure(text="📦 " + "  ·  ".join(parts))
+        self.pack_hint.configure(text=t("cre_pack_ready") if locked
+                                 else t("cre_pack_noinfo"))
+        self.pack_bar.pack(fill="x", pady=(8, 0), before=self.pack_hint)
+
+    def _clear_pack(self):
+        self._pack = None
+        self.pack_bar.pack_forget()
+        self.pack_hint.configure(text=t("cre_pack_hint"))
+        for w in (self.loader_menu, self.version_menu):
+            w.configure(state="normal")
+        self._load_versions()
 
     # ----------------------------------------------------------------- création
 
@@ -285,6 +380,11 @@ class CreatorTab(ctk.CTkFrame):
             "voice": voice,
             "tunnels": tunnels,
         }
+        if self._pack:
+            options.update(modpack=self._pack,
+                           loader_version=self._pack.get("loader_version"),
+                           cf_key=load_settings().get(
+                               "curseforge_api_key", ""))
 
         self._creating = True
         self.create_btn.configure(state="disabled", text=t("cre_creating"))
@@ -309,6 +409,8 @@ class CreatorTab(ctk.CTkFrame):
         self._creating = False
         self.create_btn.configure(state="normal", text=t("cre_create"))
         self.progress.set(1)
+        if self._pack:
+            self._clear_pack()
         if self.on_created:
             self.on_created(meta)
         if meta.get("summary"):
