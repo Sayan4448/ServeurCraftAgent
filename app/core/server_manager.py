@@ -19,6 +19,14 @@ from .properties import write_server_properties
 META_FILE = "servercraft.json"
 STOP_TIMEOUT = 30
 BACKUP_TIMEOUT = 600                 # gros mondes : zip de plusieurs Go
+# Crash : arrêt sans « stop ». Redémarrage auto limité à `crash_max_restarts`
+# tentatives par fenêtre de CRASH_WINDOW secondes (évite une boucle).
+CRASH_ACTIONS = ("none", "ask", "auto")
+CRASH_WINDOW = 600
+CRASH_DELAY = 10
+DEFAULT_CRASH_MAX = 3
+# « /stop » tapé en jeu par un OP (vanilla, Paper, Forge, Fabric)
+_STOP_LINE = re.compile(r"\]:\s*Stopping the server")
 
 # Préfixe des lignes « internes » (réponses des commandes envoyées par
 # l'app elle-même : list, data get, give, clear…). Le backlog les garde
@@ -406,6 +414,8 @@ class ServerProcess:
         self.hide_saves_until = 0.0  # masque les réponses save-* (backups)
         self.stop_requested = False  # arrêt voulu (stop/redémarrage)
         self._stop_thread = None
+        self.crashes = deque(maxlen=20)  # horodatages des crashs
+        self.crash_prompt = False    # l'UI doit proposer un redémarrage
         self._lock = threading.Lock()
         self._stdin_lock = threading.Lock()
 
@@ -515,6 +525,8 @@ class ServerProcess:
             just_ready = not self.ready and "Done (" in line
             if just_ready:
                 self.ready = True
+            if _STOP_LINE.search(line):
+                self.stop_requested = True
             quiet = self._consume_quiet(line) or (
                 time.time() < self.hide_saves_until
                 and bool(_SAVE_RESP.search(line)))
@@ -591,17 +603,59 @@ class ServerProcess:
         self._stop_geyser()
         self.exit_code = code
         self.tracker.players.clear()
-        if self.stop_requested:
-            discord.notify("stopped", self.name, code=code)
-        else:
+        crashed = not self.stop_requested
+        if crashed:
             discord.notify("crashed", self.name, code=code,
                            detail=self._tail())
+        else:
+            discord.notify("stopped", self.name, code=code)
         for cb in [self.on_exit, *self.exit_listeners]:
             if cb:
                 try:
                     cb(self.name, code)
                 except Exception:
                     pass
+        if crashed:
+            self._on_crash(code, was_ready=self.ready)
+
+    # ------------------------------------------------ crash
+    def _on_crash(self, code, was_ready: bool) -> None:
+        """Appelé depuis le thread _waiter : aucun appel Tk ici."""
+        now = time.time()
+        self.crashes.append(now)
+        self.log(t("cr_detected", code=code))
+        self.reload_meta()
+        action = self.meta.get("crash_action", "ask")
+        if action not in CRASH_ACTIONS:
+            action = "ask"
+        if action == "none":
+            return
+        if action == "ask":
+            self.crash_prompt = True
+            return
+        if not was_ready:
+            self.log(t("cr_early"))
+            return
+        try:
+            limit = max(1, int(self.meta.get("crash_max_restarts",
+                                             DEFAULT_CRASH_MAX)))
+        except (TypeError, ValueError):
+            limit = DEFAULT_CRASH_MAX
+        recent = sum(1 for c in self.crashes if now - c < CRASH_WINDOW)
+        if recent > limit:
+            self.log(t("cr_limit", n=recent, min=CRASH_WINDOW // 60))
+            self.crash_prompt = True
+            return
+        self.log(t("cr_auto", sec=CRASH_DELAY, n=recent, max=limit))
+        self._starting = True
+        try:
+            time.sleep(CRASH_DELAY)
+            if not self.is_running():
+                self.start()
+        except Exception as e:  # noqa: BLE001
+            self.log(f"✖ {t('srv_start_err')} : {e}")
+        finally:
+            self._starting = False
 
     def _consume_quiet(self, line: str) -> bool:
         """True si `line` est la réponse d'une commande interne (send_quiet).

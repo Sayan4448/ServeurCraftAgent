@@ -39,6 +39,15 @@
 - Envoi en file d'attente (jamais bloquant), limite de débit Discord
   respectée, mentions désactivées — rien n'est envoyé si le champ est vide
 
+**Détection de crash** (⚙ Config → « Détection de crash »)
+- Un arrêt sans commande « stop » (ni depuis l'app, ni `/stop` en jeu)
+  est signalé comme crash dans la console
+- Au choix : rien, proposer de relancer (par défaut), ou redémarrage
+  automatique après 10 s
+- Anti-boucle : nombre de tentatives limité sur 10 min (3 par défaut),
+  puis retour à la proposition ; pas de relance auto si le serveur plante
+  pendant son démarrage
+
 ## v0.7.0 — Release (2026-09-28)
 
 Version consolidée avant la 1.0. Reprend tout le contenu de la 0.5.5 :

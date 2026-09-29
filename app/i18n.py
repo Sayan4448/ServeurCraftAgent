@@ -1991,6 +1991,84 @@ _V8_DISCORD = {
 for _lang, _vals in _V8_DISCORD.items():
     STRINGS[_lang].update(_vals)
 
+# ------------------------------------------------ v0.8 : détection de crash
+_V8_CRASH = {
+    "fr": {
+        "ss_crash": "Détection de crash", "ss_crash_action": "En cas de crash",
+        "cr_act_none": "Rien", "cr_act_ask": "Proposer", "cr_act_auto": "Redémarrer auto",
+        "ss_crash_max": "Tentatives max",
+        "ss_crash_hint": "Un arrêt sans commande « stop » (crash, Java tué…) est détecté. Le redémarrage auto attend 10 s, est limité à ce nombre de tentatives en {min} min (sinon il repasse en « Proposer ») et n'a pas lieu si le serveur plante pendant son démarrage.",
+        "cr_detected": "✖ Crash détecté : le serveur s'est arrêté sans commande « stop » (code {code}).",
+        "cr_auto": "── Redémarrage automatique dans {sec} s (tentative {n}/{max}) ──",
+        "cr_limit": "✖ {n} crashs en {min} min : redémarrage automatique suspendu pour éviter une boucle.",
+        "cr_early": "Le serveur a planté pendant son démarrage : pas de redémarrage automatique (vérifie la console).",
+        "cr_title": "Crash du serveur",
+        "cr_ask_msg": "« {name} » s'est arrêté de façon inattendue (crash).\n\nLe relancer maintenant ?",
+    },
+    "en": {
+        "ss_crash": "Crash detection", "ss_crash_action": "On crash",
+        "cr_act_none": "Nothing", "cr_act_ask": "Ask", "cr_act_auto": "Auto restart",
+        "ss_crash_max": "Max attempts",
+        "ss_crash_hint": "A stop without a “stop” command (crash, killed Java…) is detected. Auto restart waits 10 s, is limited to this many attempts within {min} min (then it falls back to “Ask”) and is skipped if the server crashes while starting.",
+        "cr_detected": "✖ Crash detected: the server stopped without a “stop” command (code {code}).",
+        "cr_auto": "── Automatic restart in {sec} s (attempt {n}/{max}) ──",
+        "cr_limit": "✖ {n} crashes in {min} min: automatic restart suspended to avoid a loop.",
+        "cr_early": "The server crashed while starting: no automatic restart (check the console).",
+        "cr_title": "Server crash",
+        "cr_ask_msg": "“{name}” stopped unexpectedly (crash).\n\nRestart it now?",
+    },
+    "ru": {
+        "ss_crash": "Обнаружение сбоев", "ss_crash_action": "При сбое",
+        "cr_act_none": "Ничего", "cr_act_ask": "Спросить", "cr_act_auto": "Автоперезапуск",
+        "ss_crash_max": "Макс. попыток",
+        "ss_crash_hint": "Остановка без команды «stop» (сбой, убитая Java…) распознаётся. Автоперезапуск ждёт 10 с, ограничен этим числом попыток за {min} мин (затем переходит в «Спросить») и не выполняется, если сервер падает при запуске.",
+        "cr_detected": "✖ Обнаружен сбой: сервер остановился без команды «stop» (код {code}).",
+        "cr_auto": "── Автоматический перезапуск через {sec} с (попытка {n}/{max}) ──",
+        "cr_limit": "✖ {n} сбоев за {min} мин: автоперезапуск приостановлен, чтобы избежать цикла.",
+        "cr_early": "Сервер упал во время запуска: автоперезапуска не будет (проверь консоль).",
+        "cr_title": "Сбой сервера",
+        "cr_ask_msg": "«{name}» неожиданно остановился (сбой).\n\nЗапустить снова?",
+    },
+    "ja": {
+        "ss_crash": "クラッシュ検出", "ss_crash_action": "クラッシュ時",
+        "cr_act_none": "何もしない", "cr_act_ask": "確認する", "cr_act_auto": "自動再起動",
+        "ss_crash_max": "最大試行回数",
+        "ss_crash_hint": "「stop」コマンドなしの停止（クラッシュ、Java終了など）を検出します。自動再起動は10秒待ち、{min}分間にこの回数まで（超えると「確認する」に戻ります）。起動中のクラッシュでは再起動しません。",
+        "cr_detected": "✖ クラッシュを検出：「stop」なしでサーバーが停止しました（コード {code}）。",
+        "cr_auto": "── {sec} 秒後に自動再起動（試行 {n}/{max}） ──",
+        "cr_limit": "✖ {min} 分間に {n} 回クラッシュ：ループ防止のため自動再起動を停止しました。",
+        "cr_early": "起動中にクラッシュしました：自動再起動はしません（コンソールを確認）。",
+        "cr_title": "サーバーのクラッシュ",
+        "cr_ask_msg": "「{name}」が予期せず停止しました（クラッシュ）。\n\n今すぐ再起動しますか？",
+    },
+    "es": {
+        "ss_crash": "Detección de crash", "ss_crash_action": "En caso de crash",
+        "cr_act_none": "Nada", "cr_act_ask": "Preguntar", "cr_act_auto": "Reinicio auto",
+        "ss_crash_max": "Intentos máx.",
+        "ss_crash_hint": "Se detecta una parada sin comando «stop» (crash, Java cerrado…). El reinicio auto espera 10 s, se limita a este número de intentos en {min} min (luego vuelve a «Preguntar») y no ocurre si el servidor falla durante el arranque.",
+        "cr_detected": "✖ Crash detectado: el servidor se detuvo sin comando «stop» (código {code}).",
+        "cr_auto": "── Reinicio automático en {sec} s (intento {n}/{max}) ──",
+        "cr_limit": "✖ {n} crashes en {min} min: reinicio automático suspendido para evitar un bucle.",
+        "cr_early": "El servidor falló durante el arranque: sin reinicio automático (revisa la consola).",
+        "cr_title": "Crash del servidor",
+        "cr_ask_msg": "«{name}» se detuvo inesperadamente (crash).\n\n¿Reiniciarlo ahora?",
+    },
+    "de": {
+        "ss_crash": "Absturzerkennung", "ss_crash_action": "Bei Absturz",
+        "cr_act_none": "Nichts", "cr_act_ask": "Nachfragen", "cr_act_auto": "Auto-Neustart",
+        "ss_crash_max": "Max. Versuche",
+        "ss_crash_hint": "Ein Stopp ohne „stop“-Befehl (Absturz, beendetes Java…) wird erkannt. Der Auto-Neustart wartet 10 s, ist auf diese Anzahl Versuche in {min} Min. begrenzt (danach „Nachfragen“) und entfällt, wenn der Server beim Start abstürzt.",
+        "cr_detected": "✖ Absturz erkannt: Der Server wurde ohne „stop“-Befehl beendet (Code {code}).",
+        "cr_auto": "── Automatischer Neustart in {sec} s (Versuch {n}/{max}) ──",
+        "cr_limit": "✖ {n} Abstürze in {min} Min.: Auto-Neustart ausgesetzt, um eine Schleife zu vermeiden.",
+        "cr_early": "Der Server ist beim Start abgestürzt: kein automatischer Neustart (Konsole prüfen).",
+        "cr_title": "Server-Absturz",
+        "cr_ask_msg": "„{name}“ wurde unerwartet beendet (Absturz).\n\nJetzt neu starten?",
+    },
+}
+for _lang, _vals in _V8_CRASH.items():
+    STRINGS[_lang].update(_vals)
+
 
 def get_lang() -> str:
     lang = load_settings().get("language", "fr")

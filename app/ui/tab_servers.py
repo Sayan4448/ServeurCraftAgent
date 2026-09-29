@@ -512,7 +512,9 @@ class ServersTab(ctk.CTkFrame):
 
     # ============================================================ actions
     def _start(self):
-        proc = self.proc
+        self._start_proc(self.proc)
+
+    def _start_proc(self, proc):
         if not proc or proc.is_running() or proc._starting:
             return
         proc._starting = True
@@ -529,6 +531,15 @@ class ServersTab(ctk.CTkFrame):
         threading.Thread(target=work, daemon=True).start()
         if load_settings().get("server_interface", True):
             ServerWindow.open(self, proc.name)
+
+    def _ask_crash_restart(self, proc):
+        if proc.is_running() or proc._starting:
+            return
+        if messagebox.askyesno(t("cr_title"),
+                               t("cr_ask_msg", name=proc.name),
+                               icon="warning",
+                               parent=self.winfo_toplevel()):
+            self._start_proc(proc)
 
     def _stop(self):
         if self.proc and self.proc.is_running():
@@ -738,6 +749,10 @@ class ServersTab(ctk.CTkFrame):
             if self._ip_dirty:
                 self._ip_dirty = False
                 self._show_ip()
+            for p in list(sm.PROCESSES.values()):
+                if p.crash_prompt:
+                    p.crash_prompt = False
+                    self.after(0, self._ask_crash_restart, p)
             self._tick += 1
         except Exception:  # noqa: BLE001 — la boucle ne doit jamais mourir
             import traceback

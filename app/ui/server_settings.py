@@ -198,6 +198,27 @@ class ServerSettings(ctk.CTkToplevel):
             sbox, meta.get("scheduled_commands") or [])
         self.schedule_editor.pack(fill="x", padx=10, pady=10)
 
+        # ------------------------------------------------ détection de crash
+        self._section(scroll, t("ss_crash"))
+        row = ctk.CTkFrame(scroll, fg_color=theme.PANEL, corner_radius=8)
+        row.pack(fill="x", padx=4, pady=3)
+        ctk.CTkLabel(row, text=t("ss_crash_action"), width=170, anchor="w",
+                     text_color=theme.MUTED).pack(side="left", padx=10)
+        self._crash_labels = {a: t(f"cr_act_{a}") for a in sm.CRASH_ACTIONS}
+        self.crash_seg = ctk.CTkSegmentedButton(
+            row, values=list(self._crash_labels.values()),
+            selected_color=theme.SEL, text_color=theme.TEXT,
+            selected_hover_color=theme.SEL_HOVER,
+            unselected_color=theme.PANEL_2,
+            unselected_hover_color=theme.HOVER)
+        self.crash_seg.set(self._crash_labels.get(
+            meta.get("crash_action"), self._crash_labels["ask"]))
+        self.crash_seg.pack(side="left", padx=8, pady=8)
+        self._field(scroll, t("ss_crash_max"), "crash_max_restarts",
+                    str(meta.get("crash_max_restarts",
+                                 sm.DEFAULT_CRASH_MAX)))
+        self._hint(scroll, t("ss_crash_hint", min=sm.CRASH_WINDOW // 60))
+
         # ------------------------------------------------------------ bas
         self.status = ctk.CTkLabel(self, text="", text_color=theme.GREEN,
                                    font=(theme.FONT, 11))
@@ -343,6 +364,11 @@ class ServerSettings(ctk.CTkToplevel):
         self.meta["restart_time"] = (scheduler.fmt_hhmm(restart_hm)
                                      if restart_hm else "")
         self.meta["scheduled_commands"] = tasks
+        self.meta["crash_action"] = next(
+            (a for a, lbl in self._crash_labels.items()
+             if lbl == self.crash_seg.get()), "ask")
+        self.meta["crash_max_restarts"] = self._int(
+            "crash_max_restarts", sm.DEFAULT_CRASH_MAX, 1)
         self._write_meta()
         tunnels_mod.apply(self.dir, self.meta.get("loader", ""),
                           self.meta["tunnels"], java_port=self.meta["port"],
