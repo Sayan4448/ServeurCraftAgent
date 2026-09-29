@@ -10,6 +10,7 @@ venv/
 data/settings.json
 servers/
 runtimes/
+backups/
 *.jar
 *.part
 build/

@@ -5,7 +5,7 @@
 - Vérif syntaxe : `python -m compileall -q app`
 - Build MSI : `python setup.py bdist_msi` (fermer `ServerCraftAgent.exe` avant)
 - Install test (per-user, sans admin) : `msiexec /i dist\ServerCraftAgent-<ver>-win64.msi /qn`
-- Données de l'app installée : `%LOCALAPPDATA%\ServerCraftAgent` (servers/, data/, runtimes/)
+- Données de l'app installée : `%LOCALAPPDATA%\ServerCraftAgent` (servers/, data/, runtimes/, backups/)
   — pour tester depuis les sources sur ces données : `sys.frozen = True` avant les imports `app`.
 
 ## Règles

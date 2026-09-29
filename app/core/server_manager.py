@@ -10,12 +10,15 @@ from collections import deque
 from pathlib import Path
 
 from ..config import SERVERS_DIR
+from ..i18n import t
+from . import backups as backups_mod
 from . import crossplay, downloader, java as java_mod, mods as mods_mod
 from . import tunnels as tunnels_mod
 from .properties import write_server_properties
 
 META_FILE = "servercraft.json"
 STOP_TIMEOUT = 30
+BACKUP_TIMEOUT = 600                 # gros mondes : zip de plusieurs Go
 
 # Préfixe des lignes « internes » (réponses des commandes envoyées par
 # l'app elle-même : list, data get, give, clear…). Le backlog les garde
@@ -32,6 +35,12 @@ _QUIET_RESP = re.compile(
     r"That player isn't online|No player was found|"
     r"Nothing changed|That command does not exist|"
     r"Unknown item|Too many items")
+# Réponses de save-off / save-all / save-on, masquées pendant une sauvegarde
+# (leur nombre varie selon le loader et les dimensions).
+_SAVE_RESP = re.compile(
+    r"Automatic saving is now|Saving the game|Saved the game|"
+    r"Saving chunks|All chunks are saved|All dimensions are saved|"
+    r"Saved the world|Saving is already")
 # pas de fenêtre console noire pour java.exe quand l'app est packagée (GUI)
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
@@ -308,10 +317,15 @@ def find_orphans(path: Path) -> list:
 
 
 def stop_all(timeout: float = 30.0) -> None:
-    """Arrêt propre de tous les serveurs lancés (fermeture de l'app)."""
+    """Arrêt propre de tous les serveurs lancés (fermeture de l'app), avec
+    la sauvegarde avant arrêt si elle est activée."""
     running = [p for p in PROCESSES.values() if p.is_running()]
     for p in running:
-        p.send("stop")
+        p.stop()
+    for p in running:
+        th = p._stop_thread
+        if th:
+            th.join(timeout=BACKUP_TIMEOUT)
     deadline = time.time() + timeout
     for p in running:
         try:
@@ -352,7 +366,13 @@ class ServerProcess:
         self.ready = False
         self._ps = None              # psutil.Process (stats)
         self.started_at = 0.0
+        self.last_backup = 0.0
+        self.backup_error = ""
+        self.hide_saves_until = 0.0  # masque les réponses save-* (backups)
+        self.stop_requested = False  # arrêt voulu (stop/redémarrage)
+        self._stop_thread = None
         self._lock = threading.Lock()
+        self._stdin_lock = threading.Lock()
 
     def log(self, line: str, quiet: bool = False) -> None:
         """Ajoute une ligne à la console (thread-safe). Les lignes
@@ -436,6 +456,7 @@ class ServerProcess:
                 pass
         self.exit_code = None
         self.ready = False           # passe à True au « Done (…) »
+        self.stop_requested = False
         self.tracker.players.clear()
         cmd = build_launch_command(self.path, self.meta, log=self.log)
         self._java = cmd[0]
@@ -459,7 +480,10 @@ class ServerProcess:
             just_ready = not self.ready and "Done (" in line
             if just_ready:
                 self.ready = True
-            self.log(line, quiet=self._consume_quiet(line))
+            quiet = self._consume_quiet(line) or (
+                time.time() < self.hide_saves_until
+                and bool(_SAVE_RESP.search(line)))
+            self.log(line, quiet=quiet)
             try:
                 self.tracker.feed(self.name, line)
             except Exception:
@@ -549,18 +573,52 @@ class ServerProcess:
     def send(self, command: str) -> bool:
         if not self.is_running():
             return False
+        if command.strip().lstrip("/").lower() == "stop":
+            self.stop_requested = True
         try:
-            self.proc.stdin.write(command + "\n")
-            self.proc.stdin.flush()
+            with self._stdin_lock:    # scheduler, UI et IA écrivent ici
+                self.proc.stdin.write(command + "\n")
+                self.proc.stdin.flush()
             return True
         except (OSError, ValueError):
             return False
 
-    def stop(self) -> None:
-        if not self.is_running():
+    # ------------------------------------------------ sauvegardes
+    def backup(self, reason: str = "manual"):
+        """Sauvegarde du monde (bloquant — à appeler depuis un thread).
+        Retourne le chemin du zip, ou None en cas d'échec (erreur loggée)."""
+        try:
+            path = backups_mod.create(
+                self.name, self.path, reason,
+                keep=int(self.meta.get("backup_keep",
+                                       backups_mod.DEFAULT_KEEP)),
+                proc=self, log=self.log)
+            self.last_backup = time.time()
+            return path
+        except Exception as e:  # noqa: BLE001
+            self.backup_error = str(e)
+            self.log(t("bk_error", e=e))
+            return None
+
+    def is_stopping(self) -> bool:
+        th = self._stop_thread
+        return bool(th and th.is_alive())
+
+    def stop(self, reason: str = "stop") -> None:
+        """Arrêt propre : sauvegarde (si activée), `stop`, puis kill si le
+        serveur ne s'est pas arrêté après STOP_TIMEOUT."""
+        if not self.is_running() or self.is_stopping():
             return
+        self.stop_requested = True
+        self._stop_thread = threading.Thread(
+            target=self._stop_work, args=(reason,), daemon=True)
+        self._stop_thread.start()
+
+    def _stop_work(self, reason: str) -> None:
+        if self.ready and self.meta.get("backup_on_stop", True):
+            self.backup(reason)
         self.send("stop")
-        threading.Thread(target=self._kill_watchdog, daemon=True).start()
+        self._kill_watchdog()
 
     def _kill_watchdog(self) -> None:
         proc = self.proc
@@ -571,7 +629,7 @@ class ServerProcess:
 
     def restart(self) -> None:
         old = self.proc
-        self.stop()
+        self.stop("restart")
         self._starting = True
 
         def _relaunch():

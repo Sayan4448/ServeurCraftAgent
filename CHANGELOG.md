@@ -1,5 +1,20 @@
 # Versions — ServerCraft Agent
 
+## v0.8.0 — (2026-09-29)
+
+**Sauvegardes automatiques**
+- Zip du monde (`world`, `world_nether`, `world_the_end`) dans
+  `backups/<serveur>/`, hors du dossier serveur
+- Serveur lancé : `save-off` → `save-all flush` → zip → `save-on`
+  (réponses masquées de la console)
+- Avant chaque arrêt et redémarrage (fermeture de l'app comprise) et à
+  intervalle configurable ; rotation des N dernières sauvegardes auto —
+  les manuelles ne sont jamais supprimées
+- Bouton **« Restaurer »** dans « Mes Serveurs » : liste des sauvegardes,
+  restauration avec confirmation (copie de sécurité du monde actuel juste
+  avant), sauvegarde manuelle, suppression
+- Réglages dans ⚙ Config → « Sauvegardes »
+
 ## v0.7.0 — Release (2026-09-28)
 
 Version consolidée avant la 1.0. Reprend tout le contenu de la 0.5.5 :

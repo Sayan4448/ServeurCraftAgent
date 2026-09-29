@@ -20,6 +20,7 @@ APP_DIR = _base_dir()
 DATA_DIR = APP_DIR / "data"
 SERVERS_DIR = APP_DIR / "servers"
 RUNTIMES_DIR = APP_DIR / "runtimes"
+BACKUPS_DIR = APP_DIR / "backups"
 SETTINGS_FILE = DATA_DIR / "settings.json"
 
 DEFAULT_SETTINGS = {
@@ -51,7 +52,7 @@ DEFAULT_SETTINGS = {
 
 
 def ensure_dirs() -> None:
-    for d in (DATA_DIR, SERVERS_DIR, RUNTIMES_DIR):
+    for d in (DATA_DIR, SERVERS_DIR, RUNTIMES_DIR, BACKUPS_DIR):
         d.mkdir(parents=True, exist_ok=True)
 
 

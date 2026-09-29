@@ -22,6 +22,8 @@ class App(ctk.CTk):
         self.after(250, self._set_icon)
         from .uithread import install
         install(self)
+        from ..core import scheduler
+        scheduler.start()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
         header = ctk.CTkFrame(self, fg_color=theme.PANEL, corner_radius=0,

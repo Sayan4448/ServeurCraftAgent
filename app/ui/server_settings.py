@@ -10,6 +10,7 @@ import customtkinter as ctk
 from ..core import crossplay
 from ..core import server_manager as sm
 from ..core import tunnels as tunnels_mod
+from ..core.backups import DEFAULT_KEEP
 from ..core.properties import load_properties, update_properties
 from ..i18n import t
 from . import theme
@@ -175,6 +176,16 @@ class ServerSettings(ctk.CTkToplevel):
                          font=(theme.FONT, 11)).pack(anchor="w", padx=10,
                                                     pady=4)
 
+        # ------------------------------------------------------ sauvegardes
+        self._section(scroll, t("ss_backups"))
+        self._switch(scroll, t("ss_bk_on_stop"), "backup_on_stop",
+                     meta.get("backup_on_stop", True))
+        self._field(scroll, t("ss_bk_interval"), "backup_interval_min",
+                    str(meta.get("backup_interval_min", 0)))
+        self._field(scroll, t("ss_bk_keep"), "backup_keep",
+                    str(meta.get("backup_keep", DEFAULT_KEEP)))
+        self._hint(scroll, t("ss_bk_hint"))
+
         # ------------------------------------------------------------ bas
         self.status = ctk.CTkLabel(self, text="", text_color=theme.GREEN,
                                    font=(theme.FONT, 11))
@@ -199,6 +210,28 @@ class ServerSettings(ctk.CTkToplevel):
         e.insert(0, value)
         e.pack(side="left", fill="x", expand=True, padx=8, pady=8)
         self._widgets[key] = e
+
+    def _switch(self, parent, label, key, value):
+        row = ctk.CTkFrame(parent, fg_color=theme.PANEL, corner_radius=8)
+        row.pack(fill="x", padx=4, pady=3)
+        w = ctk.CTkSwitch(row, text=label, text_color=theme.TEXT,
+                          progress_color=theme.ACCENT)
+        if value:
+            w.select()
+        w.pack(side="left", padx=10, pady=8)
+        self._widgets[key] = w
+
+    def _hint(self, parent, text):
+        ctk.CTkLabel(parent, text=text, font=(theme.FONT, 10),
+                     text_color=theme.MUTED, wraplength=560, justify="left",
+                     anchor="w").pack(fill="x", padx=10, pady=(2, 4))
+
+    def _int(self, key, default, lo=0):
+        try:
+            return max(lo, int(float(self._widgets[key].get().strip()
+                                     .replace(",", "."))))
+        except ValueError:
+            return default
 
     def _prop_row(self, parent, key, label, kind, values):
         row = ctk.CTkFrame(parent, fg_color=theme.PANEL, corner_radius=8)
@@ -282,6 +315,10 @@ class ServerSettings(ctk.CTkToplevel):
         want_cp = bool(self.cp_switch.get())
         self.meta["crossplay"] = want_cp
         self.meta["tunnels"] = self.tunnels_editor.get()
+        self.meta["backup_on_stop"] = bool(
+            self._widgets["backup_on_stop"].get())
+        self.meta["backup_interval_min"] = self._int("backup_interval_min", 0)
+        self.meta["backup_keep"] = self._int("backup_keep", DEFAULT_KEEP, 1)
         self._write_meta()
         tunnels_mod.apply(self.dir, self.meta.get("loader", ""),
                           self.meta["tunnels"], java_port=self.meta["port"],

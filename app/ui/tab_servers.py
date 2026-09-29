@@ -21,6 +21,7 @@ from ..core.server_net import local_ip, playit_address, public_ip
 from .player_card import PlayerCard
 from ..i18n import t
 from . import theme
+from .backups_dialog import BackupsDialog
 from .mods_manager import ModsManager
 from .players_panel import BansView, OpsView, ctx_for
 from .server_settings import ServerSettings
@@ -136,12 +137,18 @@ class ServersTab(ctk.CTkFrame):
         self.list_scroll.grid(row=1, column=0, sticky="nsew", padx=6)
         self.list_scroll.grid_columnconfigure(0, weight=1)
 
+        ctk.CTkButton(col, text="♻  " + t("bk_btn"), height=32,
+                      fg_color="transparent", border_width=1,
+                      border_color=theme.ACCENT, text_color=theme.ACCENT,
+                      hover_color=theme.PANEL_2, font=(theme.FONT, 12),
+                      command=self._open_backups).grid(
+            row=2, column=0, sticky="ew", padx=12, pady=(12, 0))
         ctk.CTkButton(col, text="🗑  " + t("srv_delete"), height=32,
                       fg_color="transparent", border_width=1,
                       border_color=theme.RED, text_color=theme.RED,
                       hover_color=theme.PANEL_2, font=(theme.FONT, 12),
                       command=self._delete).grid(
-            row=2, column=0, sticky="ew", padx=12, pady=12)
+            row=3, column=0, sticky="ew", padx=12, pady=12)
 
     def _build_main_col(self):
         col = ctk.CTkFrame(self, fg_color="transparent")
@@ -561,6 +568,10 @@ class ServersTab(ctk.CTkFrame):
     def _open_folder(self):
         if self.meta:
             subprocess.Popen(["explorer", str(Path(self.meta["dir"]))])
+
+    def _open_backups(self):
+        if self.meta:
+            BackupsDialog(self, self.meta["name"])
 
     def _delete(self):
         if not self.meta:
