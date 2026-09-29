@@ -1,6 +1,6 @@
 # Versions — ServerCraft Agent
 
-## v0.8.0 — (2026-09-29)
+## v1.0.0 — Release (2026-09-29)
 
 **Sauvegardes automatiques**
 - Zip du monde (`world`, `world_nether`, `world_the_end`) dans

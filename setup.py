@@ -8,7 +8,7 @@ Produit dist/ServerCraftAgent-<version>-win64.msi
 """
 from cx_Freeze import Executable, setup
 
-APP_VERSION = "0.8.0"
+APP_VERSION = "1.0.0"
 APP_NAME = "ServerCraftAgent"
 
 # Raccourcis créés par l'installateur : Bureau + menu Démarrer.
