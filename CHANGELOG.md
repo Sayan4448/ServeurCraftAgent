@@ -32,6 +32,13 @@
   cherché parmi tous les Java installés, sinon JRE téléchargé — Java 25
   faisait planter Fabric Loader 0.16
 
+**Notifications Discord** (⚙ Paramètres → « Notifications Discord »)
+- Webhook configurable + bouton « Tester » ; événements au choix :
+  serveur lancé / arrêté / crashé (avec les dernières lignes de la
+  console), joueur qui rejoint / quitte
+- Envoi en file d'attente (jamais bloquant), limite de débit Discord
+  respectée, mentions désactivées — rien n'est envoyé si le champ est vide
+
 ## v0.7.0 — Release (2026-09-28)
 
 Version consolidée avant la 1.0. Reprend tout le contenu de la 0.5.5 :

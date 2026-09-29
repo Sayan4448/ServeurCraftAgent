@@ -12,7 +12,7 @@ from pathlib import Path
 from ..config import SERVERS_DIR
 from ..i18n import t
 from . import backups as backups_mod
-from . import crossplay, downloader, java as java_mod, mods as mods_mod
+from . import crossplay, discord, downloader, java as java_mod, mods as mods_mod
 from . import tunnels as tunnels_mod
 from .properties import write_server_properties
 
@@ -393,6 +393,7 @@ class ServerProcess:
         self._quiet = deque()        # commandes internes dont la réponse
                                      # est masquée de la console (FIFO)
         self.tracker = PlayerTracker(name)
+        self.tracker.on_event = self._player_event
         self.exit_code = None
         self._starting = False       # démarrage en cours (Java, Popen…)
         self._geyser = None          # process Geyser Standalone
@@ -522,6 +523,8 @@ class ServerProcess:
                 self.tracker.feed(self.name, line)
             except Exception:
                 pass
+            if just_ready:
+                discord.notify("started", self.name)
             if just_ready and crossplay.installed(self.path):
                 threading.Thread(target=self._start_geyser,
                                  daemon=True).start()
@@ -573,11 +576,26 @@ class ServerProcess:
             except Exception:  # noqa: BLE001
                 gp.kill()
 
+    def _player_event(self, kind: str, player: str) -> None:
+        discord.notify(kind, self.name, player=player)
+
+    def _tail(self, n: int = 8) -> str:
+        """Dernières lignes visibles de la console (détail d'un crash)."""
+        with self._lock:
+            lines = [ln for ln in self.backlog
+                     if not ln.startswith(QUIET_MARK)][-n:]
+        return "\n".join(lines)
+
     def _waiter(self, proc) -> None:
         code = proc.wait()
         self._stop_geyser()
         self.exit_code = code
         self.tracker.players.clear()
+        if self.stop_requested:
+            discord.notify("stopped", self.name, code=code)
+        else:
+            discord.notify("crashed", self.name, code=code,
+                           detail=self._tail())
         for cb in [self.on_exit, *self.exit_listeners]:
             if cb:
                 try:

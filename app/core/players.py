@@ -29,6 +29,7 @@ class PlayerTracker:
         self.server_name = server_name
         self.players = {}          # pseudo -> timestamp de connexion
         self.on_change = None      # callback(set de pseudos)
+        self.on_event = None       # callback("join" | "leave", pseudo)
 
     def feed(self, name: str, line: str) -> None:
         if name != self.server_name:
@@ -38,9 +39,11 @@ class PlayerTracker:
         if m:
             self.players[m.group(1)] = time.time()
             changed = True
+            self._event("join", m.group(1))
         m = LEAVE_RE.search(line)
         if m and self.players.pop(m.group(1), None) is not None:
             changed = True
+            self._event("leave", m.group(1))
         m = LIST_RE.search(line)
         if m:
             names = {n.strip() for n in m.group(1).split(",") if n.strip()}
@@ -53,6 +56,13 @@ class PlayerTracker:
                 changed = True
         if changed and self.on_change:
             self.on_change(set(self.players))
+
+    def _event(self, kind: str, player: str) -> None:
+        if self.on_event:
+            try:
+                self.on_event(kind, player)
+            except Exception:  # noqa: BLE001 — ne casse pas la lecture
+                pass
 
     def reset(self):
         self.players.clear()

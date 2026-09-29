@@ -1,13 +1,16 @@
 """Fenêtre principale : en-tête + Tabview (2 onglets) + Paramètres."""
 import sys
+import threading
 from pathlib import Path
 
 import customtkinter as ctk
 from tkinter import messagebox
 
 from ..config import load_settings, save_settings
+from ..core import discord
 from ..i18n import LANGS, t
 from . import theme
+from .uithread import ui_call
 from .tab_servers import ServersTab
 from .tab_creator import CreatorTab
 
@@ -137,19 +140,21 @@ class App(ctk.CTk):
 
 
 class SettingsDialog(ctk.CTkToplevel):
-    """Paramètres : langue, thème, interface serveur, IA bêta, clé CurseForge."""
+    """Paramètres : langue, thème, interface serveur, IA bêta, clé CurseForge,
+    notifications Discord."""
 
     def __init__(self, master):
         super().__init__(master)
         self.settings = load_settings()
         self.title(t("settings"))
-        self.geometry("540x540")
+        self.geometry("560x640")
         self.configure(fg_color=theme.BG)
         self.transient(master)
         self.grab_set()
 
-        card = ctk.CTkFrame(self, fg_color=theme.PANEL, corner_radius=10)
-        card.pack(fill="both", expand=True, padx=14, pady=14)
+        card = ctk.CTkScrollableFrame(self, fg_color=theme.PANEL,
+                                      corner_radius=10)
+        card.pack(fill="both", expand=True, padx=14, pady=(14, 0))
 
         ctk.CTkLabel(card, text=t("settings"),
                      font=(theme.FONT, 15, "bold"),
@@ -227,9 +232,72 @@ class SettingsDialog(ctk.CTkToplevel):
                      text_color=theme.MUTED, wraplength=440,
                      justify="left").pack(anchor="w", padx=14, pady=(0, 8))
 
-        ctk.CTkButton(card, text=t("save_close"), width=140,
+        # notifications Discord
+        ctk.CTkLabel(card, text=t("dc_section"),
+                     font=(theme.FONT, 13, "bold"),
+                     text_color=theme.ACCENT).pack(anchor="w", padx=14,
+                                                   pady=(10, 4))
+        row = ctk.CTkFrame(card, fg_color="transparent")
+        row.pack(fill="x", padx=14, pady=6)
+        ctk.CTkLabel(row, text=t("dc_url"), width=140, anchor="w",
+                     text_color=theme.MUTED).pack(side="left")
+        self.dc_entry = ctk.CTkEntry(
+            row, width=250, show="•",
+            placeholder_text="https://discord.com/api/webhooks/…",
+            fg_color=theme.PANEL_2, border_color=theme.BORDER,
+            text_color=theme.TEXT)
+        self.dc_entry.insert(0, self.settings.get("discord_webhook", ""))
+        self.dc_entry.pack(side="left")
+        self.dc_test_btn = ctk.CTkButton(
+            row, text=t("dc_test"), width=70, fg_color=theme.PANEL_2,
+            hover_color=theme.HOVER, text_color=theme.TEXT,
+            command=self._dc_test)
+        self.dc_test_btn.pack(side="left", padx=(6, 0))
+        evs = ctk.CTkFrame(card, fg_color="transparent")
+        evs.pack(fill="x", padx=14, pady=(2, 4))
+        cur = self.settings.get("discord_events") or {}
+        self.dc_checks = {}
+        for i, ev in enumerate(discord.EVENTS):
+            cb = ctk.CTkCheckBox(evs, text=t(f"dc_ev_{ev}"),
+                                 text_color=theme.TEXT, fg_color=theme.ACCENT,
+                                 hover_color=theme.ACCENT_HOVER, width=20)
+            if cur.get(ev, True):
+                cb.select()
+            cb.grid(row=i // 3, column=i % 3, sticky="w", padx=(0, 14),
+                    pady=2)
+            self.dc_checks[ev] = cb
+        self.dc_status = ctk.CTkLabel(card, text="", font=(theme.FONT, 10),
+                                      text_color=theme.MUTED, anchor="w")
+        self.dc_status.pack(anchor="w", padx=14)
+        ctk.CTkLabel(card, text=t("dc_hint"), font=(theme.FONT, 10),
+                     text_color=theme.MUTED, wraplength=440,
+                     justify="left").pack(anchor="w", padx=14, pady=(0, 8))
+
+        ctk.CTkButton(self, text=t("save_close"), width=140,
                       fg_color=theme.ACCENT, hover_color=theme.ACCENT_HOVER,
                       command=self._save).pack(pady=10)
+
+    def _dc_test(self):
+        url = self.dc_entry.get().strip()
+        if not discord.valid_url(url):
+            self.dc_status.configure(text=t("dc_bad_url"),
+                                     text_color=theme.RED)
+            return
+        self.dc_test_btn.configure(state="disabled")
+        self.dc_status.configure(text="…", text_color=theme.MUTED)
+
+        def work():                   # thread : requête HTTP
+            ui_call(self, self._dc_tested, discord.send_test(url))
+        threading.Thread(target=work, daemon=True).start()
+
+    def _dc_tested(self, err):
+        self.dc_test_btn.configure(state="normal")
+        if err:
+            self.dc_status.configure(text=t("dc_test_err", e=err),
+                                     text_color=theme.RED)
+        else:
+            self.dc_status.configure(text=t("dc_test_ok"),
+                                     text_color=theme.GREEN)
 
     def _ai_toggled(self):
         if self.ai_switch.get():
@@ -237,6 +305,14 @@ class SettingsDialog(ctk.CTkToplevel):
                 t("ai_beta_warn_t"), t("ai_beta_warn"), parent=self)
 
     def _save(self):
+        url = self.dc_entry.get().strip()
+        if url and not discord.valid_url(url):
+            self.dc_status.configure(text=t("dc_bad_url"),
+                                     text_color=theme.RED)
+            return
+        self.settings["discord_webhook"] = url
+        self.settings["discord_events"] = {
+            ev: bool(cb.get()) for ev, cb in self.dc_checks.items()}
         label = self.lang_menu.get()
         for code, name in LANGS.items():
             if name == label:

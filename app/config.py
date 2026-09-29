@@ -29,6 +29,9 @@ DEFAULT_SETTINGS = {
     "language": "fr",                   # fr | en | ru | ja | es | de
     "theme": "dark",                    # "dark" | "light"
     "server_interface": True,           # fenêtre d'administration au lancement
+    "discord_webhook": "",              # vide = aucune notification envoyée
+    "discord_events": {"started": True, "stopped": True, "crashed": True,
+                       "join": True, "leave": True},
     "ai_beta": False,                   # onglet « Agent IA » (early access)
     # — paramètres de l'Agent IA (bêta) —
     "ai_provider": "gemini",
