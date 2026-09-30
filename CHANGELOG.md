@@ -1,5 +1,47 @@
 # Versions — ServerCraft Agent
 
+## v1.1.0 — Release (2026-09-30)
+
+**IP gratuite automatique avec Playit.gg** (sans ouvrir de port ni donner
+son IP publique)
+- Bouton **« 🌐 Créer une IP gratuite (Playit) »** dans le tableau de bord :
+  une petite fenêtre s'ouvre à côté de l'app et suit chaque étape
+- Première fois seulement : la page playit.gg s'ouvre dans le navigateur,
+  on se connecte (ou « Continuer en invité ») et on valide — l'app
+  récupère la clé toute seule (`data/playit.toml`, jamais partagée)
+- L'app crée elle-même les tunnels via l'API Playit : **TCP** pour Java,
+  **UDP** pour Bedrock (cross-play) et Voice Chat si un mod vocal est
+  installé — plus besoin de choisir TCP/UDP sur playit.gg
+- Agent officiel playit téléchargé depuis GitHub, lancé avec le serveur
+  et arrêté quand plus aucun serveur ne l'utilise ; adresses affichées
+  dans le tableau de bord (copie en un clic) et dans la console
+- ⚙ Paramètres → « Playit.gg » : état du compte, lier / délier
+- ⚙ Config → « Tunnels Playit.gg » : interrupteur « Playit automatique »
+  et bouton « Créer les tunnels » ; l'éditeur manuel reste disponible
+- Créateur : case Playit cochée sans adresse = mode automatique (la
+  fenêtre Playit s'ouvre après la création)
+
+**Inventaire façon jeu** (carte joueur)
+- Fenêtre d'inventaire comme en jeu : textures officielles de Minecraft
+  (extraites du client Mojang de la version du serveur, une seule fois),
+  blocs en 3D, quantités, barre de durabilité, reflet des objets
+  enchantés, armure, main gauche et skin du joueur
+- Infobulle au survol : nom personnalisé, enchantements, durabilité
+- Onglet Ender chest, bouton **« 📷 Image »** pour exporter l'inventaire
+  en PNG
+- Joueur connecté : inventaire lu en direct (`data get entity`, réponse
+  masquée) au lieu du fichier `.dat` qui n'est écrit qu'à la sauvegarde
+  — les objets donnés / retirés apparaissent tout de suite
+- Format 1.21.5+ (`equipment`) pris en charge pour la lecture, le retrait
+  et le vidage
+
+**Correctifs**
+- Onglets « En ligne / Bannis / OP » du panneau joueurs : libellés
+  manquants dans les 6 langues
+- Tableau de bord : astuce IP coupée (retour à la ligne), adresses sur
+  deux colonnes si elles sont longues
+- Carte joueur : l'inventaire restait minuscule (mauvaise ligne extensible)
+
 ## v1.0.0 — Release (2026-09-29)
 
 **Sauvegardes automatiques**
