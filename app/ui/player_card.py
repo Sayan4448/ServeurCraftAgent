@@ -15,14 +15,17 @@ import requests
 import customtkinter as ctk
 from PIL import Image
 
+from ..core import item_icons
 from ..core import playerdata as pd
 from ..core import server_manager
 from ..core import worldmap
-
-MINOTAR = "https://minotar.net/helm/{}/64.png"
 from ..i18n import t
 from . import theme
+from .inventory_view import InventoryView
 from .uithread import ui_call
+
+MINOTAR = "https://minotar.net/helm/{}/64.png"
+MINOTAR_BODY = "https://minotar.net/armor/body/{}/100.png"
 
 # correspondance slot NBT -> nom de slot pour `item replace entity`
 _CMD_SLOT = {pd.SLOT_OFFHAND: "weapon.offhand", 100: "armor.feet",
@@ -72,13 +75,13 @@ class PlayerCard(ctk.CTkToplevel):
         self._alive = True
 
         self.title(t("pc_title", name=name))
-        self.geometry("980x560")
-        self.minsize(880, 500)
+        self.geometry("1040x640")
+        self.minsize(900, 560)
         self.configure(fg_color=theme.BG)
         self.transient(master)
         self.protocol("WM_DELETE_WINDOW", self._close)
         self.grid_columnconfigure(1, weight=1)
-        self.grid_rowconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=1)
 
         # ------------------------------------------------------- en-tête
         head = ctk.CTkFrame(self, fg_color=theme.PANEL, corner_radius=10)
@@ -136,6 +139,7 @@ class PlayerCard(ctk.CTkToplevel):
         right.grid(row=1, column=1, sticky="nsew", padx=(5, 10),
                    pady=(0, 10))
         right.grid_columnconfigure(0, weight=1)
+        right.grid_rowconfigure(1, weight=1)
         top = ctk.CTkFrame(right, fg_color="transparent")
         top.grid(row=0, column=0, sticky="ew", padx=10, pady=(8, 4))
         self.inv_seg = ctk.CTkSegmentedButton(
@@ -151,10 +155,13 @@ class PlayerCard(ctk.CTkToplevel):
                       font=(theme.FONT, 11), fg_color=theme.PANEL_2,
                       hover_color=theme.HOVER, text_color=theme.TEXT,
                       command=self.refresh).pack(side="right")
+        ctk.CTkButton(top, text="📷 " + t("inv_export"), height=28,
+                      font=(theme.FONT, 11), fg_color=theme.PANEL_2,
+                      hover_color=theme.HOVER, text_color=theme.TEXT,
+                      command=self._export).pack(side="right", padx=6)
 
-        self.grid_f = ctk.CTkFrame(right, fg_color=theme.PANEL_2,
-                                 corner_radius=8)
-        self.grid_f.grid(row=1, column=0, sticky="nsew", padx=10, pady=6)
+        self.inv_view = InventoryView(right, on_select=self._select_slot)
+        self.inv_view.grid(row=1, column=0, sticky="nsew", padx=10, pady=6)
 
         btns = ctk.CTkFrame(right, fg_color="transparent")
         btns.grid(row=2, column=0, sticky="ew", padx=10, pady=(2, 4))
@@ -181,6 +188,7 @@ class PlayerCard(ctk.CTkToplevel):
 
         self.refresh()
         self._load_head()
+        self._load_textures()
 
     # ------------------------------------------------------------ données
 
@@ -195,9 +203,15 @@ class PlayerCard(ctk.CTkToplevel):
 
         def work():
             try:
-                data = pd.load(self.dir, name)
+                live = None
+                if online:              # le .dat d'un joueur connecté est
+                    try:                # périmé (sauvegarde auto ~5 min)
+                        live = pd.load_live(proc, name)
+                    except pd.PlayerDataError:
+                        live = None
+                data = live if live is not None else pd.load(self.dir, name)
                 inf = pd.info(data)
-                if online:                       # position en direct
+                if online and live is None:
                     pos = self._fetch_pos()
                     if pos:
                         inf.update(x=pos[0], y=pos[1], z=pos[2])
@@ -256,13 +270,14 @@ class PlayerCard(ctk.CTkToplevel):
         name = self.name
 
         def work():
-            try:
-                r = requests.get(MINOTAR.format(name), timeout=8)
-                if r.ok:
-                    ui_call(self, self._set_head,
-                            Image.open(io.BytesIO(r.content)))
-            except Exception:  # noqa: BLE001
-                pass
+            for url, cb in ((MINOTAR, self._set_head),
+                            (MINOTAR_BODY, self._set_body)):
+                try:
+                    r = requests.get(url.format(name), timeout=8)
+                    if r.ok:
+                        ui_call(self, cb, Image.open(io.BytesIO(r.content)))
+                except Exception:  # noqa: BLE001
+                    pass
         threading.Thread(target=work, daemon=True).start()
 
     def _set_head(self, img: Image.Image):
@@ -270,6 +285,40 @@ class PlayerCard(ctk.CTkToplevel):
             return
         self._head_ctk = ctk.CTkImage(img, size=(48, 48))
         self.head_lbl.configure(image=self._head_ctk, text="")
+
+    def _set_body(self, img: Image.Image):
+        if self._alive:
+            self.inv_view.set_player(img)
+
+    def _load_textures(self):
+        """Textures officielles de la version du serveur (téléchargées une
+        seule fois) ; en attendant : celles d'une autre version ou des
+        pastilles."""
+        version = str(self.proc.meta.get("mc_version", ""))
+        cached = item_icons.best_cached(version)
+        if cached:
+            self.inv_view.set_textures(cached)
+        if item_icons.available(version):
+            return
+        self._tex_status = t("inv_tex_dl")
+        self.status.configure(text=self._tex_status)
+
+        def work():
+            try:
+                ui_call(self, self._textures_ready, item_icons.ensure(version))
+            except item_icons.TextureError as e:
+                ui_call(self, self._textures_ready, None, str(e))
+        threading.Thread(target=work, daemon=True).start()
+
+    def _textures_ready(self, root, err=""):
+        if not self._alive:
+            return
+        self._tex_status = ""
+        if root:
+            self.inv_view.set_textures(root)
+            self.status.configure(text="")
+        else:
+            self.status.configure(text=t("inv_tex_err", e=err[:80]))
 
     # ------------------------------------------------------------- carte
 
@@ -300,50 +349,32 @@ class PlayerCard(ctk.CTkToplevel):
     # -------------------------------------------------------- inventaire
 
     def _render_inv(self):
-        for w in self.grid_f.winfo_children():
-            w.destroy()
         ender = self.inv_seg.get() == t("pc_ender")
-        inv = pd.inventory(self.data)
-        items = inv["ender" if ender else "inv"]
+        items = pd.inventory(self.data)["ender" if ender else "inv"]
+        sel = self._sel[0] if self._sel and self._sel[1] == ender else None
+        self.inv_view.set(items, ender,
+                          t("pc_ender") if ender else self.name, sel)
         on = pd.is_online(self.proc, self.name)
+        if not getattr(self, "_tex_status", ""):
+            self.status.configure(
+                text=t("pc_hint_online" if on else "pc_hint_offline"))
 
-        def slot(r, c, s):
-            it = items.get(s)
-            txt, col = "", theme.PANEL
-            if it:
-                short = pd.pretty_name(it["id"])
-                txt = (short[:14] + ("…" if len(short) > 14 else "")
-                       + (f"\n×{it['count']}" if it["count"] > 1 else ""))
-                col = theme.PANEL_2
-            sel = self._sel == (s, ender)
-            b = ctk.CTkButton(
-                self.grid_f, text=txt, width=58, height=44,
-                font=(theme.FONT, 9), corner_radius=6, fg_color=col,
-                hover_color=theme.HOVER, text_color=theme.TEXT,
-                border_width=2,
-                border_color=theme.ACCENT if sel else theme.BORDER,
-                command=lambda x=s: self._select(x, ender))
-            b.grid(row=r, column=c, padx=2, pady=2)
-
-        if ender:
-            for i, s in enumerate(range(27)):
-                slot(i // 9, i % 9, s)
-        else:
-            # armure : tête, torse, jambes, pieds + main gauche
-            for i, s in enumerate((103, 102, 101, 100, pd.SLOT_OFFHAND)):
-                slot(0, i, s)
-            for j in (1, 2, 3):             # inventaire principal 9..35
-                for i, s in enumerate(range(9 + j * 9 - 9,
-                                            9 + j * 9)):
-                    slot(j, i, s)
-            for i, s in enumerate(range(9)):  # hotbar
-                slot(4, i, s)
-        hint = t("pc_hint_online" if on else "pc_hint_offline")
-        self.status.configure(text=hint)
-
-    def _select(self, slot, ender):
-        self._sel = (slot, ender)
+    def _select_slot(self, slot):
+        ender = self.inv_seg.get() == t("pc_ender")
+        self._sel = None if self._sel == (slot, ender) else (slot, ender)
         self._render_inv()
+
+    def _export(self):
+        from tkinter import filedialog
+        ender = self.inv_seg.get() == t("pc_ender")
+        path = filedialog.asksaveasfilename(
+            parent=self, defaultextension=".png",
+            filetypes=[("PNG", "*.png")],
+            initialfile=f"{self.name}-{'ender' if ender else 'inventory'}.png")
+        if not path:
+            return
+        self.inv_view.image(4).save(path)
+        self.status.configure(text=t("inv_exported", path=Path(path).name))
 
     # ---------------------------------------------------------- actions
 
