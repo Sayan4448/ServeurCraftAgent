@@ -7,9 +7,10 @@ import customtkinter as ctk
 from tkinter import messagebox
 
 from ..config import load_settings, save_settings
-from ..core import discord
+from ..core import discord, playit
 from ..i18n import LANGS, t
 from . import theme
+from .playit_panel import PlayitPanel
 from .uithread import ui_call
 from .tab_servers import ServersTab
 from .tab_creator import CreatorTab
@@ -287,6 +288,22 @@ class SettingsDialog(ctk.CTkToplevel):
                      text_color=theme.MUTED, wraplength=440,
                      justify="left").pack(anchor="w", padx=14, pady=(0, 8))
 
+        # Playit.gg (IP gratuite)
+        ctk.CTkLabel(card, text=t("pl_set_section"),
+                     font=(theme.FONT, 13, "bold"),
+                     text_color=theme.ACCENT).pack(anchor="w", padx=14,
+                                                   pady=(10, 4))
+        row = ctk.CTkFrame(card, fg_color="transparent")
+        row.pack(fill="x", padx=14, pady=(2, 10))
+        self.pl_status = ctk.CTkLabel(row, text="", font=(theme.FONT, 11),
+                                      anchor="w", justify="left",
+                                      wraplength=300)
+        self.pl_status.pack(side="left", fill="x", expand=True)
+        self.pl_btn = ctk.CTkButton(row, text="", width=0, height=30,
+                                    command=self._pl_action)
+        self.pl_btn.pack(side="right")
+        self._pl_refresh()
+
         ctk.CTkButton(self, text=t("save_close"), width=140,
                       fg_color=theme.ACCENT, hover_color=theme.ACCENT_HOVER,
                       command=self._save).pack(pady=10)
@@ -312,6 +329,30 @@ class SettingsDialog(ctk.CTkToplevel):
         else:
             self.dc_status.configure(text=t("dc_test_ok"),
                                      text_color=theme.GREEN)
+
+    def _pl_refresh(self):
+        if playit.linked():
+            self.pl_status.configure(text=t("pl_set_linked"),
+                                     text_color=theme.GREEN)
+            self.pl_btn.configure(text=t("pl_unlink_btn"),
+                                  fg_color=theme.PANEL_2,
+                                  hover_color=theme.RED,
+                                  text_color=theme.TEXT)
+        else:
+            self.pl_status.configure(text=t("pl_set_unlinked"),
+                                     text_color=theme.MUTED)
+            self.pl_btn.configure(text=t("pl_link_btn"),
+                                  fg_color=theme.ACCENT,
+                                  hover_color=theme.ACCENT_HOVER,
+                                  text_color=theme.ON_ACCENT)
+
+    def _pl_action(self):
+        if not playit.linked():
+            PlayitPanel.show(self, on_done=self._pl_refresh)
+        elif messagebox.askyesno(t("pl_set_section"),
+                                 t("pl_unlink_confirm"), parent=self):
+            playit.unlink()
+            self._pl_refresh()
 
     def _ai_toggled(self):
         if self.ai_switch.get():

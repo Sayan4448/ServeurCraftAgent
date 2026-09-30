@@ -13,6 +13,7 @@ from ..config import SERVERS_DIR
 from ..i18n import t
 from . import backups as backups_mod
 from . import crossplay, discord, downloader, java as java_mod, mods as mods_mod
+from . import playit
 from . import tunnels as tunnels_mod
 from .properties import write_server_properties
 
@@ -254,6 +255,7 @@ def create_server(options: dict, progress_cb=None, log=print) -> dict:
             "accounts": accounts,
             "crossplay": crossplay_on,
             "tunnels": tunnel_list,
+            "playit_auto": bool(options.get("playit_auto")),
             "voice": voice,
             "jar": meta_jar,
             "launch_args": launch_args,
@@ -380,6 +382,7 @@ def stop_all(timeout: float = 30.0) -> None:
             p.proc.kill()
     for p in PROCESSES.values():
         p._stop_geyser()
+    playit.stop_agent()
 
 
 class ServerProcess:
@@ -546,6 +549,26 @@ class ServerProcess:
                          daemon=True).start()
         threading.Thread(target=self._waiter, args=(self.proc,),
                          daemon=True).start()
+        if self.meta.get("playit_auto") and playit.linked():
+            threading.Thread(target=self._playit_up, daemon=True).start()
+
+    # ------------------------------------------------ tunnels Playit
+    def _playit_up(self) -> None:
+        """Tunnels Playit retrouvés / créés + agent (thread, aucun Tk)."""
+        def log(event, label, value):
+            if event == "create":
+                self.log(t("pl_log_create", name=label, port=value))
+            elif event == "ready":
+                self.log(t("pl_log_ready", name=label, addr=value))
+        try:
+            playit.setup_server(self.name, self.path, log)
+            self.reload_meta()
+            time.sleep(4)
+            err = playit.agent_error()
+            if err:
+                self.log(f"✖ {t('pl_log_agent_err', e=err)}")
+        except Exception as e:  # noqa: BLE001 — réseau, compte, API
+            self.log(f"✖ {t('pl_log_err', e=playit.explain(e))}")
 
     def _reader(self, proc) -> None:
         for line in proc.stdout:
@@ -649,6 +672,7 @@ class ServerProcess:
                     pass
         if crashed:
             self._on_crash(code, was_ready=self.ready)
+        playit.release(list(PROCESSES.values()))
 
     # ------------------------------------------------ crash
     def _on_crash(self, code, was_ready: bool) -> None:

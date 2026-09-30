@@ -23,19 +23,7 @@ class TunnelsEditor(ctk.CTkFrame):
                          text_color=theme.MUTED, anchor="w").grid(
                 row=0, column=j, sticky="w", padx=3)
         self._rows = []
-        existing = tunnels or []
-        # les 3 tunnels par défaut, complétés par ceux déjà enregistrés
-        base = [dict(d) for d in tn_mod.DEFAULTS]
-        for tn in existing:
-            match = next((b for b in base if b["local"] == tn.get("local")
-                          and b["proto"] == tn.get("proto")
-                          and not b["address"]), None)
-            if match:
-                match.update(tn)
-            else:
-                base.append(dict(tn))
-        for tn in base:
-            self.add_row(tn)
+        self.load(tunnels)
         ctk.CTkButton(self, text="＋  " + t("tn_add"), height=30,
                       fg_color="transparent", border_width=1,
                       border_color=theme.ACCENT, text_color=theme.ACCENT,
@@ -46,6 +34,26 @@ class TunnelsEditor(ctk.CTkFrame):
                      text_color=theme.MUTED, anchor="w", wraplength=560,
                      justify="left").grid(row=2, column=0, sticky="w",
                                           padx=3, pady=(8, 0))
+
+    def load(self, tunnels=None):
+        """(Re)remplit les lignes : les 3 tunnels par défaut, complétés par
+        ceux déjà enregistrés."""
+        for row in list(self._rows):
+            self._remove(row)
+        base = [dict(d) for d in tn_mod.DEFAULTS]
+        for tn in tunnels or []:
+            free = [b for b in base if b["proto"] == tn.get("proto")
+                    and not b["address"]]
+            match = next((b for b in free
+                          if str(b["local"]) == str(tn.get("local"))), None) \
+                or next((b for b in free if b["name"] == tn.get("name")),
+                        None)
+            if match:
+                match.update(tn)
+            else:
+                base.append(dict(tn))
+        for tn in base:
+            self.add_row(tn)
 
     def add_row(self, tn: dict):
         r = len(self._rows) + 1

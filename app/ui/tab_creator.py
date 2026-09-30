@@ -8,6 +8,7 @@ from ..config import load_settings
 from ..core import downloader, mods as mods_mod, server_manager as sm
 from ..i18n import t
 from . import theme
+from .playit_panel import PlayitPanel
 from .tunnels_editor import TunnelsEditor
 from .uithread import ui_call
 
@@ -175,8 +176,12 @@ class CreatorTab(ctk.CTkFrame):
         self.playit_frame.grid(row=12, column=0, columnspan=2, sticky="ew",
                                padx=16, pady=(0, 10))
         self.playit_frame.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(self.playit_frame, text=t("pl_cre_hint"),
+                     font=(theme.FONT, 11, "bold"), text_color=theme.ACCENT,
+                     anchor="w", justify="left", wraplength=560).grid(
+            row=0, column=0, sticky="w", padx=12, pady=(10, 0))
         self.tunnels_editor = TunnelsEditor(self.playit_frame)
-        self.tunnels_editor.grid(row=0, column=0, sticky="ew", padx=10,
+        self.tunnels_editor.grid(row=1, column=0, sticky="ew", padx=10,
                                  pady=10)
         self.playit_frame.grid_remove()
 
@@ -345,11 +350,10 @@ class CreatorTab(ctk.CTkFrame):
                      == "Simple Voice Chat" else "plasmo_voice")
 
         tunnels = []
+        playit_auto = False
         if self.playit_check.get():
             tunnels = self.tunnels_editor.get()
-            if not tunnels:
-                messagebox.showwarning("Playit", t("cre_need_addr"))
-                return
+            playit_auto = not tunnels
 
         try:
             ram_mb = int(float(self.ram_entry.get().replace(",", ".")) * 1024)
@@ -379,6 +383,7 @@ class CreatorTab(ctk.CTkFrame):
             },
             "voice": voice,
             "tunnels": tunnels,
+            "playit_auto": playit_auto,
         }
         if self._pack:
             options.update(modpack=self._pack,
@@ -413,6 +418,8 @@ class CreatorTab(ctk.CTkFrame):
             self._clear_pack()
         if self.on_created:
             self.on_created(meta)
+        if meta.get("playit_auto"):
+            PlayitPanel.show(self, sm.get_process(meta["name"]))
         if meta.get("summary"):
             SummaryDialog(self.winfo_toplevel(), meta["summary"])
         else:

@@ -15,6 +15,7 @@ from ..core.properties import load_properties, update_properties
 from ..i18n import t
 from . import theme
 from .schedule_editor import ScheduleEditor
+from .playit_panel import PlayitPanel
 from .tunnels_editor import TunnelsEditor
 from .uithread import ui_call
 
@@ -134,6 +135,18 @@ class ServerSettings(ctk.CTkToplevel):
         self._section(scroll, t("tn_section"))
         tbox = ctk.CTkFrame(scroll, fg_color=theme.PANEL, corner_radius=8)
         tbox.pack(fill="x", padx=4, pady=3)
+        auto = ctk.CTkFrame(tbox, fg_color="transparent")
+        auto.pack(fill="x", padx=10, pady=(10, 0))
+        self.playit_switch = ctk.CTkSwitch(
+            auto, text=t("pl_auto_switch"), text_color=theme.TEXT,
+            progress_color=theme.ACCENT)
+        if meta.get("playit_auto"):
+            self.playit_switch.select()
+        self.playit_switch.pack(side="left")
+        ctk.CTkButton(auto, text=t("pl_auto_btn"), height=30, width=0,
+                      fg_color=theme.ACCENT, hover_color=theme.ACCENT_HOVER,
+                      text_color=theme.ON_ACCENT,
+                      command=self._playit_now).pack(side="right")
         self.tunnels_editor = TunnelsEditor(tbox, meta.get("tunnels") or [])
         self.tunnels_editor.pack(fill="x", padx=10, pady=(10, 10))
 
@@ -357,6 +370,7 @@ class ServerSettings(ctk.CTkToplevel):
         want_cp = bool(self.cp_switch.get())
         self.meta["crossplay"] = want_cp
         self.meta["tunnels"] = self.tunnels_editor.get()
+        self.meta["playit_auto"] = bool(self.playit_switch.get())
         self.meta["backup_on_stop"] = bool(
             self._widgets["backup_on_stop"].get())
         self.meta["backup_interval_min"] = self._int("backup_interval_min", 0)
@@ -429,6 +443,23 @@ class ServerSettings(ctk.CTkToplevel):
                     ("authme", "easyauth")) for f in d.glob("*.jar")):
                 return True
         return False
+
+    def _playit_now(self):
+        """Tunnels TCP/UDP créés automatiquement (panneau Playit) ; l'éditeur
+        et l'interrupteur reprennent ensuite ce qui a été enregistré."""
+        def done():
+            try:
+                disk = json.loads((self.dir / sm.META_FILE).read_text(
+                    encoding="utf-8"))
+            except (OSError, ValueError):
+                return
+            self.meta["tunnels"] = disk.get("tunnels") or []
+            self.meta["playit_auto"] = True
+            if self.winfo_exists():
+                self.tunnels_editor.load(self.meta["tunnels"])
+                self.playit_switch.select()
+        PlayitPanel.show(self, sm.get_process(self.meta["name"]),
+                         on_done=done)
 
     def _write_meta(self):
         (self.dir / sm.META_FILE).write_text(

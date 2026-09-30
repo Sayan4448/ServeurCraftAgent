@@ -26,6 +26,7 @@ from .backups_dialog import BackupsDialog
 from .mods_manager import ModsManager
 from .monitor_graph import MonitorGraph
 from .players_panel import BansView, OpsView, ctx_for
+from .playit_panel import PlayitPanel
 from .server_settings import ServerSettings
 from .server_window import ServerWindow
 
@@ -100,6 +101,7 @@ class ServersTab(ctk.CTkFrame):
         self._dots: dict[str, list] = {}
         self._pub_ip: str | None = None
         self._ip_dirty = False
+        self._shown_tunnels = None
         self._tick = 0
         self._max_players = 20
 
@@ -402,6 +404,7 @@ class ServersTab(ctk.CTkFrame):
         m = self.proc.meta
         ip = local_ip()
         port = m.get("port", 25565)
+        self._shown_tunnels = m.get("tunnels")
         tunnels = m.get("tunnels") or []
         java_tn = next((tn for tn in tunnels if tn["proto"] == "tcp"
                         and tn["local"] == port), None)
@@ -426,6 +429,7 @@ class ServersTab(ctk.CTkFrame):
             if tn is java_tn or tn is bedrock_tn:
                 continue
             chips.append((f"Playit · {tn['name']}", tn["address"]))
+        cols = 3 if sum(len(a) + len(v) for a, v in chips) <= 80 else 2
         for i, (label, value) in enumerate(chips):
             b = ctk.CTkButton(
                 self.ip_row, text=f"{label}   {value}", height=26,
@@ -433,11 +437,21 @@ class ServersTab(ctk.CTkFrame):
                 fg_color=theme.PANEL_2, hover_color=theme.HOVER,
                 text_color=theme.TEXT, width=0)
             b.configure(command=lambda v=value, w=b: self._copy(v, w))
-            b.grid(row=i // 3, column=i % 3, sticky="w", padx=4, pady=2)
+            b.grid(row=i // cols, column=i % cols, sticky="w", padx=4, pady=2)
+            self._ip_chips.append(b)
+        if not net_addr:
+            i = len(chips)
+            b = ctk.CTkButton(
+                self.ip_row, text=t("pl_btn_free_ip"), height=26,
+                corner_radius=13, font=(theme.FONT, 11, "bold"),
+                fg_color=theme.ACCENT, hover_color=theme.ACCENT_HOVER,
+                text_color=theme.ON_ACCENT, width=0,
+                command=self._playit_free_ip)
+            b.grid(row=i // cols, column=i % cols, sticky="w", padx=4, pady=2)
             self._ip_chips.append(b)
         self.ip_hint.configure(
             text=t("ip_hint_ok") if net_addr
-            else t("ip_hint_wan", port=port))
+            else t("pl_hint_free", port=port))
         if not net_addr and not self._pub_ip and self._pub_ip is None:
             self._pub_ip = ""
 
@@ -445,6 +459,15 @@ class ServersTab(ctk.CTkFrame):
                 self._pub_ip = public_ip() or ""
                 self._ip_dirty = True
             threading.Thread(target=_fetch, daemon=True).start()
+
+    def _playit_free_ip(self):
+        proc = self.proc
+
+        def done():
+            proc.reload_meta()
+            if self.proc is proc:
+                self._show_ip()
+        PlayitPanel.show(self, proc, on_done=done)
 
     def _copy(self, value, widget):
         if value == "…":
@@ -770,6 +793,9 @@ class ServersTab(ctk.CTkFrame):
                         slot[1] = on
                         slot[0].configure(text_color=theme.GREEN if on
                                           else theme.DISABLED)
+            if self.proc and self.meta and (self.proc.meta.get("tunnels")
+                                            != self._shown_tunnels):
+                self._ip_dirty = True           # tunnels Playit auto créés
             if self._ip_dirty:
                 self._ip_dirty = False
                 self._show_ip()
