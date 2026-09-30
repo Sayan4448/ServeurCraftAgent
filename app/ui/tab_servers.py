@@ -184,6 +184,8 @@ class ServersTab(ctk.CTkFrame):
                                     justify="left")
         self.ip_hint.grid(row=3, column=0, sticky="w", padx=16,
                           pady=(2, 10))
+        head.bind("<Configure>", lambda e: self.ip_hint.configure(
+            wraplength=max(200, e.width / head._get_widget_scaling() - 40)))
 
         # ---------------------------------------------------- stats
         stats = ctk.CTkFrame(col, fg_color="transparent")

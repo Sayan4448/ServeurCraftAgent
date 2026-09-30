@@ -8,6 +8,8 @@ venv/
 # Données locales de l'app
 # contient la clé API — ne jamais committer
 data/settings.json
+# clé secrète de l'agent Playit
+data/playit.toml
 servers/
 runtimes/
 backups/

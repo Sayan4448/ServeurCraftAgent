@@ -2117,6 +2117,18 @@ _V8_MONITOR = {
 for _lang, _vals in _V8_MONITOR.items():
     STRINGS[_lang].update(_vals)
 
+# ------------------------------------------------ v1.1 : correctifs
+_V11_FIX = {
+    "fr": {"pv_online": "En ligne", "pv_bans": "Bannis", "pv_ops": "OP"},
+    "en": {"pv_online": "Online", "pv_bans": "Banned", "pv_ops": "OPs"},
+    "ru": {"pv_online": "В сети", "pv_bans": "Баны", "pv_ops": "Операторы"},
+    "ja": {"pv_online": "オンライン", "pv_bans": "BAN", "pv_ops": "OP"},
+    "es": {"pv_online": "En línea", "pv_bans": "Baneados", "pv_ops": "OP"},
+    "de": {"pv_online": "Online", "pv_bans": "Gebannt", "pv_ops": "OPs"},
+}
+for _lang, _vals in _V11_FIX.items():
+    STRINGS[_lang].update(_vals)
+
 
 def get_lang() -> str:
     lang = load_settings().get("language", "fr")
