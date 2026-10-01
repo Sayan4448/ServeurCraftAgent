@@ -13,7 +13,7 @@ from ..config import SERVERS_DIR
 from ..i18n import t
 from . import backups as backups_mod
 from . import crossplay, discord, downloader, java as java_mod, mods as mods_mod
-from . import playit
+from . import playit, server_net
 from . import tunnels as tunnels_mod
 from .properties import write_server_properties
 
@@ -540,6 +540,17 @@ class ServerProcess:
                 lock.unlink(missing_ok=True)
             except OSError:
                 pass
+        # Port déjà pris (autre serveur, autre programme) : Java démarrerait
+        # puis planterait sur « FAILED TO BIND TO PORT » — autant le dire
+        # tout de suite, clairement.
+        from .properties import load_properties, parse_port
+        port = parse_port(load_properties(
+            self.path / "server.properties").get("server-port", "")) \
+            or int(self.meta.get("port", 25565))
+        if server_net.port_in_use(port):
+            owner = server_net.port_owner(port)
+            raise ServerError(t("srv_port_busy", port=port,
+                                by=f" ({owner})" if owner else ""))
         self.exit_code = None
         self.ready = False           # passe à True au « Done (…) »
         self.stop_requested = False
@@ -856,6 +867,57 @@ def get_process(name: str) -> ServerProcess:
     if name not in PROCESSES:
         PROCESSES[name] = ServerProcess(name)
     return PROCESSES[name]
+
+
+def free_port(start: int = 25565) -> int:
+    """Premier port ≥ `start` qu'aucun serveur de la liste n'utilise."""
+    used = {int(m.get("port", 25565)) for m in list_servers()}
+    port = start
+    while port in used and port < 65535:
+        port += 1
+    return port
+
+
+# jamais copiés : verrou du monde, journaux et sauvegardes de l'original
+_DUP_SKIP = shutil.ignore_patterns("session.lock", "logs", "crash-reports",
+                                   "PLAYIT-README.txt")
+
+
+def duplicate_server(name: str, new_name: str) -> dict:
+    """Copie complète d'un serveur arrêté (monde, mods, configs) sous un
+    autre nom, sur un port libre — pour tester une mise à jour ou un mod
+    sans toucher à l'original. Les tunnels Playit ne sont pas repris (ils
+    pointent vers l'original). Bloquant : à appeler depuis un thread."""
+    src = server_dir(name)
+    slug = _slug(new_name)
+    dst = server_dir(slug)
+    proc = PROCESSES.get(name)
+    if proc and (proc.is_running() or proc._starting):
+        raise ServerError(t("dup_running"))
+    if not (src / META_FILE).exists():
+        raise ServerError(t("dup_missing", name=name))
+    if dst.exists():
+        raise ServerError(t("dup_exists", name=slug))
+    port = free_port()
+    try:
+        shutil.copytree(src, dst, ignore=_DUP_SKIP)
+        meta = load_meta(dst)
+        meta.update(name=slug, port=port, tunnels=[], playit_auto=False,
+                    created=time.strftime("%Y-%m-%d %H:%M"))
+        (dst / META_FILE).write_text(json.dumps(meta, indent=2),
+                                     encoding="utf-8")
+        from .properties import update_properties
+        props = dst / "server.properties"
+        if props.exists():
+            update_properties(props, {"server-port": port})
+        voice = mods_mod.voicechat_config_path(dst, meta.get("loader", ""))
+        if voice.exists():            # adresse du tunnel de l'original
+            update_properties(voice, {"voice_host": ""})
+    except Exception:
+        shutil.rmtree(dst, ignore_errors=True)
+        raise
+    meta["dir"] = str(dst)
+    return meta
 
 
 def delete_server(name: str) -> None:

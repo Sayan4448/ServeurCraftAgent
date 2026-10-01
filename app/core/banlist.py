@@ -123,6 +123,53 @@ def deop(server_dir: Path, name: str, proc=None) -> None:
                if e.get("name", "").lower() != name.lower()])
 
 
+# --------------------------------------------------------------- whitelist
+
+WHITELIST = "whitelist.json"
+
+
+def list_whitelist(server_dir: Path) -> list:
+    return [{"name": e.get("name", "?"), "uuid": e.get("uuid", "")}
+            for e in _read(Path(server_dir) / WHITELIST)]
+
+
+def whitelist_enabled(server_dir: Path) -> bool:
+    from .properties import load_properties
+    return load_properties(Path(server_dir) / "server.properties").get(
+        "white-list", "false").lower() == "true"
+
+
+def set_whitelist(server_dir: Path, enabled: bool, proc=None) -> None:
+    """Active / désactive la whitelist : `server.properties` (pour le
+    prochain démarrage) et, si le serveur tourne, tout de suite."""
+    from .properties import update_properties
+    update_properties(Path(server_dir) / "server.properties",
+                      {"white-list": "true" if enabled else "false"})
+    if proc and proc.is_running():
+        proc.send(f"whitelist {'on' if enabled else 'off'}")
+
+
+def whitelist_add(server_dir: Path, name: str, proc=None,
+                  online_mode: bool = False) -> None:
+    if proc and proc.is_running():
+        proc.send(f"whitelist add {name}")
+        return
+    f = Path(server_dir) / WHITELIST
+    entries = [e for e in _read(f)
+               if e.get("name", "").lower() != name.lower()]
+    entries.append({"uuid": player_uuid(name, online_mode), "name": name})
+    _write(f, entries)
+
+
+def whitelist_remove(server_dir: Path, name: str, proc=None) -> None:
+    if proc and proc.is_running():
+        proc.send(f"whitelist remove {name}")
+        return
+    f = Path(server_dir) / WHITELIST
+    _write(f, [e for e in _read(f)
+               if e.get("name", "").lower() != name.lower()])
+
+
 def ban(server_dir: Path, name: str, reason: str = "", proc=None,
         online_mode: bool = False) -> None:
     if proc and proc.is_running():
