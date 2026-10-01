@@ -111,10 +111,7 @@ class CreatorTab(ctk.CTkFrame):
         accbox.grid(row=6, column=1, sticky="ew", padx=16, pady=6)
         self.accounts_seg = ctk.CTkSegmentedButton(
             accbox, values=[t("acc_crack"), t("acc_premium"), t("acc_both")],
-            selected_color=theme.SEL, text_color=theme.TEXT,
-            selected_hover_color=theme.SEL_HOVER,
-            unselected_color=theme.PANEL_2,
-            unselected_hover_color=theme.HOVER)
+            **theme.SEG)
         self.accounts_seg.set(t("acc_both"))
         self.accounts_seg.pack(anchor="w")
         self.crossplay_check = ctk.CTkCheckBox(
@@ -152,10 +149,7 @@ class CreatorTab(ctk.CTkFrame):
         self.voice_check.pack(side="left")
         self.voice_choice = ctk.CTkSegmentedButton(
             voicebox, values=["Simple Voice Chat", "Plasmo Voice"],
-            selected_color=theme.SEL, text_color=theme.TEXT,
-            selected_hover_color=theme.SEL_HOVER,
-            unselected_color=theme.PANEL_2,
-            unselected_hover_color=theme.HOVER)
+            **theme.SEG)
         self.voice_choice.set("Simple Voice Chat")
         self.voice_choice.pack(side="left", padx=10)
 
@@ -186,7 +180,7 @@ class CreatorTab(ctk.CTkFrame):
         self.playit_frame.grid_remove()
 
         self.create_btn = ctk.CTkButton(
-            form, text=t("cre_create"), height=42,
+            form, text=t("cre_create"), height=42, corner_radius=10,
             font=(theme.FONT, 14, "bold"), fg_color=theme.GREEN,
             hover_color=theme.GREEN_HOVER, text_color=theme.ON_GREEN,
             command=self._create)
@@ -209,6 +203,12 @@ class CreatorTab(ctk.CTkFrame):
             right, font=(theme.FONT_MONO, 11), fg_color=theme.CONSOLE_BG,
             text_color=theme.CONSOLE_TEXT, state="disabled", wrap="word")
         self.logbox.grid(row=2, column=0, sticky="nsew", padx=14, pady=(4, 14))
+        self.log_hint = ctk.CTkLabel(
+            right, text=t("cre_log_hint"), font=(theme.FONT, 11),
+            text_color=theme.MUTED, fg_color=theme.CONSOLE_BG,
+            wraplength=300, justify="center")
+        self.log_hint.place(in_=self.logbox, relx=0.5, rely=0.5,
+                            anchor="center")
 
         self._load_versions()
 
@@ -224,6 +224,7 @@ class CreatorTab(ctk.CTkFrame):
         ui_call(self, self._append_log, text)
 
     def _append_log(self, text):
+        self.log_hint.place_forget()
         self.logbox.configure(state="normal")
         self.logbox.insert("end", text + "\n")
         self.logbox.see("end")

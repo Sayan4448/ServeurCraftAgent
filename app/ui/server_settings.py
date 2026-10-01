@@ -101,10 +101,7 @@ class ServerSettings(ctk.CTkToplevel):
         self._acc_init = acc_init
         self.accounts_seg = ctk.CTkSegmentedButton(
             box, values=[t("acc_crack"), t("acc_premium"), t("acc_both")],
-            selected_color=theme.SEL, text_color=theme.TEXT,
-            selected_hover_color=theme.SEL_HOVER,
-            unselected_color=theme.PANEL_2,
-            unselected_hover_color=theme.HOVER,
+            **theme.SEG,
             command=lambda _v: self._acc_hint_update())
         self.accounts_seg.set(
             {"premium": t("acc_premium"), "crack": t("acc_crack")}
@@ -221,10 +218,7 @@ class ServerSettings(ctk.CTkToplevel):
         self._crash_labels = {a: t(f"cr_act_{a}") for a in sm.CRASH_ACTIONS}
         self.crash_seg = ctk.CTkSegmentedButton(
             row, values=list(self._crash_labels.values()),
-            selected_color=theme.SEL, text_color=theme.TEXT,
-            selected_hover_color=theme.SEL_HOVER,
-            unselected_color=theme.PANEL_2,
-            unselected_hover_color=theme.HOVER)
+            **theme.SEG)
         self.crash_seg.set(self._crash_labels.get(
             meta.get("crash_action"), self._crash_labels["ask"]))
         self.crash_seg.pack(side="left", padx=8, pady=8)

@@ -97,6 +97,7 @@ def render(items: dict, ender: bool, k: int, icons: item_icons.Icons,
     img = _panel(w, h, k)
     dr = ImageDraw.Draw(img)
     font = item_icons.font_for(max(8, int(7.5 * k)))
+    count_font = item_icons.font_for(max(7, int(6.5 * k)))
     if title:
         pos = (8 * k, 6 * k) if ender else (82 * k, 8 * k)
         dr.text(pos, title, font=font, fill=_TITLE)
@@ -135,10 +136,10 @@ def render(items: dict, ender: bool, k: int, icons: item_icons.Icons,
                           by + k - 1),
                          fill=(int(r * 255), int(g * 255), int(b * 255)))
         if it["count"] > 1:
-            tx, ty = (x + 17) * k, (y + 17) * k
-            dr.text((tx + k, ty + k), str(it["count"]), font=font,
+            tx, ty = (x + 16) * k, (y + 16.5) * k
+            dr.text((tx + k, ty + k), str(it["count"]), font=count_font,
                     fill=(63, 63, 63), anchor="rd")
-            dr.text((tx, ty), str(it["count"]), font=font,
+            dr.text((tx, ty), str(it["count"]), font=count_font,
                     fill=(255, 255, 255), anchor="rd")
     if selected in slots:
         x, y = slots[selected]

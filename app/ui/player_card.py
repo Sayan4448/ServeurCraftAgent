@@ -124,19 +124,18 @@ class PlayerCard(ctk.CTkToplevel):
                      text_color=theme.MUTED).pack(side="left", padx=4)
         self.zoom_seg = ctk.CTkSegmentedButton(
             zoom, values=["1", "2", "4"], command=lambda _v: self._load_map(),
-            font=(theme.FONT, 11), selected_color=theme.ACCENT,
-            selected_hover_color=theme.ACCENT_HOVER,
-            unselected_color=theme.PANEL_2,
-            unselected_hover_color=theme.HOVER, text_color=theme.TEXT)
+            font=(theme.FONT, 11), **theme.SEG)
         self.zoom_seg.set("2")
         self.zoom_seg.pack(side="left")
         self.map_info = ctk.CTkLabel(left, text="", font=(theme.FONT, 10),
                                      text_color=theme.MUTED)
         self.map_info.pack()
-        ctk.CTkButton(left, text="⟳ " + t("pc_refresh"), height=28,
+        ctk.CTkButton(left, height=28,
                       font=(theme.FONT, 11), fg_color=theme.PANEL_2,
                       hover_color=theme.HOVER, text_color=theme.TEXT,
-                      command=self.refresh).pack(pady=(4, 10))
+                      command=self.refresh,
+                      **theme.labelled("restart", t("pc_refresh"), "⟳", 13)
+                      ).pack(pady=(4, 10))
 
         # ------------------------------------------------ inventaire (droite)
         right = ctk.CTkFrame(self, fg_color=theme.PANEL, corner_radius=10)
@@ -149,20 +148,21 @@ class PlayerCard(ctk.CTkToplevel):
         self.inv_seg = ctk.CTkSegmentedButton(
             top, values=[t("pc_inv"), t("pc_ender")],
             command=lambda _v: self._render_inv(),
-            font=(theme.FONT, 11), selected_color=theme.ACCENT,
-            selected_hover_color=theme.ACCENT_HOVER,
-            unselected_color=theme.PANEL_2,
-            unselected_hover_color=theme.HOVER, text_color=theme.TEXT)
+            font=(theme.FONT, 11), **theme.SEG)
         self.inv_seg.set(t("pc_inv"))
         self.inv_seg.pack(side="left")
-        ctk.CTkButton(top, text="⟳ " + t("pc_refresh"), height=28,
+        ctk.CTkButton(top, height=28,
                       font=(theme.FONT, 11), fg_color=theme.PANEL_2,
                       hover_color=theme.HOVER, text_color=theme.TEXT,
-                      command=self.refresh).pack(side="right")
-        ctk.CTkButton(top, text="📷 " + t("inv_export"), height=28,
+                      command=self.refresh,
+                      **theme.labelled("restart", t("pc_refresh"), "⟳", 13)
+                      ).pack(side="right")
+        ctk.CTkButton(top, height=28,
                       font=(theme.FONT, 11), fg_color=theme.PANEL_2,
                       hover_color=theme.HOVER, text_color=theme.TEXT,
-                      command=self._export).pack(side="right", padx=6)
+                      command=self._export,
+                      **theme.labelled("camera", t("inv_export"), "📷", 13)
+                      ).pack(side="right", padx=6)
 
         self.inv_view = InventoryView(right, on_select=self._select_slot,
                                       on_move=self._move,
@@ -172,21 +172,27 @@ class PlayerCard(ctk.CTkToplevel):
 
         btns = ctk.CTkFrame(right, fg_color="transparent")
         btns.grid(row=2, column=0, sticky="ew", padx=10, pady=(2, 4))
-        ctk.CTkButton(btns, text="🎁 " + t("pc_give"), height=32,
+        ctk.CTkButton(btns, height=32,
                       font=(theme.FONT, 12, "bold"), fg_color=theme.GREEN,
                       hover_color=theme.GREEN_HOVER,
                       text_color=theme.ON_GREEN,
-                      command=self._give_dialog).pack(
+                      command=self._give_dialog,
+                      **theme.labelled("gift", t("pc_give"), "🎁", 14,
+                                       theme.ON_GREEN)).pack(
             side="left", expand=True, fill="x", padx=(0, 4))
-        ctk.CTkButton(btns, text="✕ " + t("pc_remove"), height=32,
+        ctk.CTkButton(btns, height=32,
                       font=(theme.FONT, 12), fg_color=theme.PANEL_2,
                       hover_color=theme.HOVER, text_color=theme.TEXT,
-                      command=self._remove_sel).pack(
-            side="left", expand=True, fill="x", padx=4)
-        ctk.CTkButton(btns, text="🗑 " + t("pc_clear"), height=32,
-                      font=(theme.FONT, 12), fg_color=theme.PANEL_2,
-                      hover_color=theme.RED, text_color=theme.TEXT,
-                      command=self._clear_all).pack(
+                      command=self._remove_sel,
+                      **theme.labelled("close", t("pc_remove"), "✕", 13)
+                      ).pack(side="left", expand=True, fill="x", padx=4)
+        ctk.CTkButton(btns, height=32,
+                      font=(theme.FONT, 12), fg_color="transparent",
+                      border_width=1, border_color=theme.RED,
+                      hover_color=theme.TINT_RED, text_color=theme.RED,
+                      command=self._clear_all,
+                      **theme.labelled("delete", t("pc_clear"), "🗑", 14,
+                                       theme.RED)).pack(
             side="left", expand=True, fill="x", padx=(4, 0))
 
         self.status = ctk.CTkLabel(right, text="", font=(theme.FONT, 10),

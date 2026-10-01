@@ -63,10 +63,7 @@ class ModsManager(ctk.CTkToplevel):
 
         self.source_seg = ctk.CTkSegmentedButton(
             ctrl, values=["Modrinth", "CurseForge"],
-            selected_color=theme.SEL, text_color=theme.TEXT,
-            selected_hover_color=theme.SEL_HOVER,
-            unselected_color=theme.PANEL_2,
-            unselected_hover_color=theme.HOVER,
+            **theme.SEG,
             command=self._source_changed)
         self.source_seg.set("Modrinth")
         self.source_seg.pack(side="left", padx=10, pady=10)
@@ -78,10 +75,7 @@ class ModsManager(ctk.CTkToplevel):
             kinds.append("Plugins")
         self.kind_seg = ctk.CTkSegmentedButton(
             ctrl, values=kinds or ["Mods"],
-            selected_color=theme.SEL, text_color=theme.TEXT,
-            selected_hover_color=theme.SEL_HOVER,
-            unselected_color=theme.PANEL_2,
-            unselected_hover_color=theme.HOVER,
+            **theme.SEG,
             command=lambda _v: self._search(reset=True))
         self.kind_seg.set(
             "Plugins" if mods_mod.default_kind(meta["loader"]) == "plugin"
