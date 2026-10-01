@@ -177,8 +177,10 @@ class Agent:
         return out
 
     def _safe_path(self, rel: str) -> Path:
-        p = (self.dir / rel).resolve()
-        if not str(p).startswith(str(self.dir.resolve())):
+        root = self.dir.resolve()
+        p = (root / rel).resolve()
+        # comparaison par composants : « ../abcd » commence par « abc »
+        if p != root and root not in p.parents:
             raise PermissionError(f"Chemin hors du serveur : {rel}")
         return p
 
