@@ -21,6 +21,9 @@ from ..core.server_net import local_ip, playit_address, public_ip
 from .player_card import PlayerCard
 from ..i18n import t
 from . import theme
+from .cmd_history import CommandHistory
+from .feedback import toast
+from .uithread import ui_call
 
 MINOTAR = "https://minotar.net/helm/{}/40.png"
 
@@ -78,31 +81,43 @@ class ServerWindow(ctk.CTkToplevel):
                                        anchor="w")
         self.status_lbl.grid(row=0, column=0, sticky="w", padx=14,
                              pady=(10, 0))
+        # adresses et astuce sur toute la largeur, sous les boutons : sur
+        # la même rangée, les boutons recouvraient l'adresse IP
         self.ip_lbl = ctk.CTkLabel(head, text="", font=(theme.FONT_MONO, 11),
-                                   text_color=theme.MUTED, anchor="w")
-        self.ip_lbl.grid(row=1, column=0, sticky="w", padx=14)
+                                   text_color=theme.MUTED, anchor="w",
+                                   justify="left")
+        self.ip_lbl.grid(row=1, column=0, columnspan=2, sticky="w", padx=14)
         self.stats_lbl = ctk.CTkLabel(head, text="", font=(theme.FONT, 11),
                                       text_color=theme.MUTED, anchor="w")
-        self.stats_lbl.grid(row=2, column=0, sticky="w", padx=14,
-                            pady=(0, 10))
+        self.stats_lbl.grid(row=2, column=0, columnspan=2, sticky="w",
+                            padx=14, pady=(0, 10))
+        head.bind("<Configure>", lambda e: self.ip_lbl.configure(
+            wraplength=max(240, e.width / head._get_widget_scaling() - 36)))
 
         btns = ctk.CTkFrame(head, fg_color="transparent")
-        btns.grid(row=0, column=1, rowspan=3, sticky="e", padx=10)
-        bstyle = dict(height=32, width=110, font=(theme.FONT, 12, "bold"))
+        btns.grid(row=0, column=1, sticky="e", padx=10)
+        bstyle = dict(height=32, width=118, font=(theme.FONT, 12, "bold"))
         self.start_btn = ctk.CTkButton(
-            btns, text=t("srv_start"), fg_color=theme.GREEN,
+            btns, fg_color=theme.GREEN,
             hover_color=theme.GREEN_HOVER, text_color=theme.ON_GREEN,
-            command=self._start, **bstyle)
+            command=self._start, **bstyle,
+            **theme.labelled("play", t("srv_start_lbl"), "▶", 14,
+                             theme.ON_GREEN))
         self.stop_btn = ctk.CTkButton(
-            btns, text=t("srv_stop"), fg_color=theme.RED,
-            hover_color=theme.RED_HOVER, command=self._stop, **bstyle)
+            btns, fg_color=theme.RED,
+            hover_color=theme.RED_HOVER, command=self._stop, **bstyle,
+            **theme.labelled("stop", t("srv_stop"), "■", 14,
+                             theme.ON_ACCENT))
         self.restart_btn = ctk.CTkButton(
-            btns, text=t("srv_restart"), fg_color=theme.ORANGE,
-            hover_color=theme.ORANGE_HOVER, command=self._restart, **bstyle)
+            btns, fg_color=theme.ORANGE,
+            hover_color=theme.ORANGE_HOVER, command=self._restart, **bstyle,
+            **theme.labelled("restart", t("srv_restart"), "⟳", 14,
+                             theme.ON_ACCENT))
         self.settings_btn = ctk.CTkButton(
-            btns, text=t("srv_settings"), fg_color=theme.PANEL_2,
+            btns, fg_color=theme.PANEL_2,
             hover_color=theme.HOVER, text_color=theme.TEXT,
-            command=self._open_settings, **bstyle)
+            command=self._open_settings, **bstyle,
+            **theme.labelled("settings", t("srv_settings_lbl"), "⚙", 14))
         for b in (self.start_btn, self.stop_btn, self.restart_btn,
                   self.settings_btn):
             b.pack(side="left", padx=3, pady=8)
@@ -120,9 +135,6 @@ class ServerWindow(ctk.CTkToplevel):
             left, font=(theme.FONT_MONO, 12), fg_color=theme.CONSOLE_BG,
             text_color=theme.CONSOLE_TEXT, wrap="word", state="disabled")
         self.console.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 6))
-        self.console.tag_config("err", foreground=theme.c(("#dc2626", "#f87171")))
-        self.console.tag_config("warn", foreground=theme.c(("#b45309", "#fbbf24")))
-        self.console.tag_config("info", foreground=theme.c(theme.ACCENT))
 
         cmdrow = ctk.CTkFrame(left, fg_color="transparent")
         cmdrow.grid(row=2, column=0, sticky="ew", padx=12, pady=(0, 12))
@@ -132,9 +144,14 @@ class ServerWindow(ctk.CTkToplevel):
             border_color=theme.BORDER, text_color=theme.TEXT)
         self.cmd_entry.grid(row=0, column=0, sticky="ew", padx=(0, 8))
         self.cmd_entry.bind("<Return>", lambda e: self._send())
-        ctk.CTkButton(cmdrow, text=t("srv_send"), width=90,
+        self._history = CommandHistory()
+        self._history.bind(self.cmd_entry)      # ↑ / ↓
+        ctk.CTkButton(cmdrow, width=110,
                       fg_color=theme.ACCENT, hover_color=theme.ACCENT_HOVER,
-                      command=self._send).grid(row=0, column=1)
+                      text_color=theme.ON_ACCENT, command=self._send,
+                      **theme.labelled("send", t("srv_send"), "", 14,
+                                       theme.ON_ACCENT)
+                      ).grid(row=0, column=1)
 
         # ----------------------------------------------------------- joueurs
         right = ctk.CTkFrame(self, fg_color=theme.PANEL, corner_radius=10,
@@ -147,23 +164,27 @@ class ServerWindow(ctk.CTkToplevel):
             right, text=t("players_online", n=0),
             font=(theme.FONT, 13, "bold"), text_color=theme.TEXT)
         self.players_header.grid(row=0, column=0, sticky="w", padx=12, pady=10)
-        self._pviews = [t("pv_online"), t("pv_bans"), t("pv_ops")]
+        self._pviews = [t("pv_online"), t("pv_bans"), t("pv_ops"),
+                        t("pv_whitelist")]
         seg = ctk.CTkSegmentedButton(
             right, values=self._pviews, command=self._show_pview,
-            selected_color=theme.SEL, text_color=theme.TEXT,
-            selected_hover_color=theme.SEL_HOVER,
-            unselected_color=theme.PANEL_2,
-            unselected_hover_color=theme.HOVER)
+            font=(theme.FONT, 11), **theme.SEG)
         seg.set(self._pviews[0])
         seg.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 8))
         self.players_frame = ctk.CTkScrollableFrame(
             right, fg_color="transparent")
         self.players_frame.grid(row=2, column=0, sticky="nsew", padx=6,
                                 pady=(0, 8))
-        from .players_panel import BansView, OpsView, ctx_for
+        from .players_panel import (BansView, OpsView, WhitelistView,
+                                    ctx_for)
         self.bans_view = BansView(right, lambda: ctx_for(self.proc))
         self.ops_view = OpsView(right, lambda: ctx_for(self.proc))
-        for v in (self.bans_view, self.ops_view):
+        self.whitelist_view = WhitelistView(right,
+                                            lambda: ctx_for(self.proc))
+        self._pview_widgets = dict(zip(self._pviews, (
+            self.players_frame, self.bans_view, self.ops_view,
+            self.whitelist_view)))
+        for v in (self.bans_view, self.ops_view, self.whitelist_view):
             v.grid(row=2, column=0, sticky="nsew", padx=6, pady=(0, 8))
             v.grid_remove()
 
@@ -227,11 +248,12 @@ class ServerWindow(ctk.CTkToplevel):
                 text=f"○  {self.name}  ·  {t('srv_stopped')}",
                 text_color=theme.MUTED)
         theme.action_button(self.start_btn, not running and not starting,
-                            theme.GREEN, theme.GREEN_HOVER, theme.ON_GREEN)
+                            theme.GREEN, theme.GREEN_HOVER, theme.ON_GREEN,
+                            "play")
         theme.action_button(self.stop_btn, running, theme.RED,
-                            theme.RED_HOVER)
+                            theme.RED_HOVER, icon_name="stop")
         theme.action_button(self.restart_btn, running, theme.ORANGE,
-                            theme.ORANGE_HOVER)
+                            theme.ORANGE_HOVER, icon_name="restart")
 
     def _show_ip(self):
         meta = self.proc.meta
@@ -273,6 +295,11 @@ class ServerWindow(ctk.CTkToplevel):
         return None
 
     def _append_many(self, lines):
+        # couleurs relues à chaque ajout : elles suivent le thème en direct
+        for name, color in (("err", ("#dc2626", "#f87171")),
+                            ("warn", ("#b45309", "#fbbf24")),
+                            ("info", theme.ACCENT)):
+            self.console.tag_config(name, foreground=theme.c(color))
         self.console.configure(state="normal")
         for line in lines:
             if line.startswith(sm.QUIET_MARK):
@@ -288,6 +315,7 @@ class ServerWindow(ctk.CTkToplevel):
         cmd = self.cmd_entry.get().strip()
         if not cmd:
             return
+        self._history.add(cmd)
         if self.proc.send(cmd):
             self.proc.log(f"> {cmd}")
         else:
@@ -305,7 +333,9 @@ class ServerWindow(ctk.CTkToplevel):
             try:
                 proc.start()
             except Exception as e:  # noqa: BLE001
-                proc.log(f"✖ {t('srv_start_err')} : {e}")
+                msg = f"{t('srv_start_err')} : {e}"
+                proc.log(f"✖ {msg}")
+                ui_call(self, toast, self, msg, "error", 7000)
             finally:
                 proc._starting = False
         threading.Thread(target=work, daemon=True).start()
@@ -334,16 +364,13 @@ class ServerWindow(ctk.CTkToplevel):
     # ------------------------------------------------------------ joueurs
 
     def _show_pview(self, value):
-        views = {self._pviews[0]: self.players_frame,
-                 self._pviews[1]: self.bans_view,
-                 self._pviews[2]: self.ops_view}
-        for k, v in views.items():
+        for k, v in self._pview_widgets.items():
             if k == value:
                 v.grid()
             else:
                 v.grid_remove()
         if value != self._pviews[0]:
-            views[value].refresh()
+            self._pview_widgets[value].refresh()
 
     def _render_players(self):
         for w in self.players_frame.winfo_children():

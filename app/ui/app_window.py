@@ -1,20 +1,33 @@
-"""Fenêtre principale : en-tête + Tabview (2 onglets) + Paramètres."""
+"""Fenêtre principale : en-tête + Tabview (2 onglets) + Paramètres + Aide."""
+import os
 import sys
 import threading
+import webbrowser
 from pathlib import Path
 
 import customtkinter as ctk
 from tkinter import messagebox
 
-from ..config import curseforge_key, load_settings, save_settings
+from .. import __version__
+from ..config import APP_DIR, curseforge_key, load_settings, save_settings
 from ..core import discord, playit
 from ..core import mods as mods_mod
 from ..i18n import LANGS, t
 from . import theme
+from .feedback import Tooltip, toast
 from .playit_panel import PlayitPanel
 from .uithread import ui_call
 from .tab_servers import ServersTab
 from .tab_creator import CreatorTab
+
+
+REPO_URL = "https://github.com/Sayan4448/ServeurCraftAgent"
+
+
+def _install_dir() -> Path:
+    """Dossier de l'app (exe installé, ou racine des sources)."""
+    return (Path(sys.executable).parent if getattr(sys, "frozen", False)
+            else Path(__file__).resolve().parent.parent.parent)
 
 
 class App(ctk.CTk):
@@ -35,28 +48,37 @@ class App(ctk.CTk):
                               height=60, border_width=0)
         header.pack(fill="x")
         header.pack_propagate(False)
-        logo = ctk.CTkLabel(header, text="⛏", width=38, height=38,
-                            corner_radius=10, fg_color=theme.ACCENT,
-                            text_color="#ffffff", font=(theme.FONT, 18))
+        logo = self._logo(header)
         logo.pack(side="left", padx=(18, 10))
         titles = ctk.CTkFrame(header, fg_color="transparent")
         titles.pack(side="left")
-        ctk.CTkLabel(titles, text="ServerCraft Agent",
+        name_row = ctk.CTkFrame(titles, fg_color="transparent")
+        name_row.pack(anchor="w")
+        ctk.CTkLabel(name_row, text="ServerCraft Agent",
                      font=(theme.FONT, 17, "bold"), text_color=theme.TEXT,
-                     anchor="w").pack(anchor="w")
+                     anchor="w").pack(side="left")
+        ctk.CTkLabel(name_row, text=f"v{__version__}", height=18,
+                     corner_radius=9, fg_color=theme.PANEL_2,
+                     font=(theme.FONT, 10, "bold"),
+                     text_color=theme.MUTED).pack(side="left", padx=8)
         ctk.CTkLabel(titles, text=t("header_sub"), font=(theme.FONT, 11),
                      text_color=theme.MUTED, anchor="w").pack(anchor="w")
+        tool = dict(height=34, fg_color=theme.PANEL_2,
+                    hover_color=theme.HOVER, text_color=theme.TEXT,
+                    font=(theme.FONT, 12))
         ctk.CTkButton(
-            header, text="⚙  " + t("settings"), width=120, height=34,
-            fg_color=theme.PANEL_2, hover_color=theme.HOVER,
-            text_color=theme.TEXT, font=(theme.FONT, 12),
-            command=lambda: SettingsDialog(self),
-        ).pack(side="right", padx=16)
+            header, width=120, command=self.open_settings, **tool,
+            **theme.labelled("settings", t("settings"), "⚙"),
+        ).pack(side="right", padx=(8, 16))
+        help_btn = ctk.CTkButton(
+            header, width=38, command=self.open_help, **tool,
+            **theme.labelled("help", "", "?"))
+        help_btn.pack(side="right", padx=(8, 0))
+        Tooltip(help_btn, f"{t('help_title')} (F1)")
         self.theme_btn = ctk.CTkButton(
-            header, text="", width=38, height=34, fg_color=theme.PANEL_2,
-            hover_color=theme.HOVER, text_color=theme.TEXT,
-            font=(theme.FONT, 15), command=self._toggle_theme)
+            header, text="", width=38, command=self._toggle_theme, **tool)
         self.theme_btn.pack(side="right")
+        Tooltip(self.theme_btn, t("tip_theme"))
         self._theme_icon()
         ctk.CTkFrame(self, height=1, fg_color=theme.BORDER,
                      corner_radius=0).pack(fill="x")
@@ -79,7 +101,7 @@ class App(ctk.CTk):
 
         self.servers_tab = ServersTab(
             self.tabview.tab(t("tab_servers")),
-            on_new=lambda: self.tabview.set(t("tab_creator")))
+            on_new=lambda: self.show_tab(t("tab_creator")))
         self.servers_tab.pack(fill="both", expand=True)
 
         self.creator_tab = CreatorTab(
@@ -94,6 +116,70 @@ class App(ctk.CTk):
             self.tabview.add(t("tab_ai"))
             self.ai_tab = AiTab(self.tabview.tab(t("tab_ai")))
             self.ai_tab.pack(fill="both", expand=True)
+
+        self._bind_shortcuts()
+
+    def _logo(self, parent):
+        """Icône de l'app (assets/icon.png) ; pastille de repli sinon."""
+        try:
+            from PIL import Image
+            img = Image.open(_install_dir() / "assets" / "icon.png")
+            self._logo_img = ctk.CTkImage(img, size=(38, 38))
+            return ctk.CTkLabel(parent, text="", image=self._logo_img,
+                                width=38, height=38)
+        except Exception:  # noqa: BLE001 — fichier absent ou illisible
+            return ctk.CTkLabel(parent, text="⛏", width=38, height=38,
+                                corner_radius=10, fg_color=theme.ACCENT,
+                                text_color="#ffffff", font=(theme.FONT, 18))
+
+    # ------------------------------------------------------------ raccourcis
+    def _bind_shortcuts(self):
+        """Raccourcis de la fenêtre principale (liste dans l'aide, F1). Ils
+        ne s'appliquent pas aux autres fenêtres ouvertes."""
+        def on_servers(fn):
+            def run(_e=None):
+                if self.tabview.get() == t("tab_servers"):
+                    fn()
+            return run
+
+        def console(fn):
+            def run(_e=None):
+                self.show_tab(t("tab_servers"))
+                fn()
+            return run
+        tab = self.servers_tab
+        for keys, fn in (
+                (("<Control-n>", "<Control-N>"),
+                 lambda _e=None: self.show_tab(t("tab_creator"))),
+                (("<F5>",), on_servers(tab.start_selected)),
+                (("<Shift-F5>",), on_servers(tab.stop_selected)),
+                (("<Control-r>", "<Control-R>"),
+                 on_servers(tab.restart_selected)),
+                (("<Control-l>", "<Control-L>"), console(tab.focus_command)),
+                (("<Control-f>", "<Control-F>"), console(tab.focus_filter)),
+                (("<Control-comma>",), lambda _e=None: self.open_settings()),
+                (("<F1>",), lambda _e=None: self.open_help())):
+            for key in keys:
+                self.bind(key, fn)
+
+    def show_tab(self, name: str):
+        """Affiche un onglet. `CTkTabview.set()` masque les autres onglets
+        100 ms plus tard : deux changements rapprochés (raccourcis clavier)
+        laissaient la fenêtre vide — on vérifie donc après coup."""
+        if self.tabview.get() != name:
+            self.tabview.set(name)
+        self.after(160, self._ensure_tab_visible)
+
+    def _ensure_tab_visible(self):
+        current = self.tabview.get()
+        if not self.tabview.tab(current).winfo_ismapped():
+            self.tabview.set(current)
+
+    def open_settings(self):
+        SettingsDialog(self)
+
+    def open_help(self):
+        HelpDialog.show(self)
 
     def _on_close(self):
         """Arrête proprement les serveurs (sinon java.exe reste orphelin)."""
@@ -117,10 +203,14 @@ class App(ctk.CTk):
 
     def _server_created(self, meta):
         self.servers_tab.select_by_name(meta["name"])
-        self.tabview.set(t("tab_servers"))
+        self.show_tab(t("tab_servers"))
 
     def _theme_icon(self):
-        self.theme_btn.configure(text="☀" if theme.is_dark() else "☾")
+        img = theme.icon("sun" if theme.is_dark() else "moon")
+        if img is not None:
+            self.theme_btn.configure(image=img, text="")
+        else:
+            self.theme_btn.configure(text="☀" if theme.is_dark() else "☾")
 
     def _toggle_theme(self):
         mode = "light" if theme.is_dark() else "dark"
@@ -131,9 +221,7 @@ class App(ctk.CTk):
         self._theme_icon()
 
     def _set_icon(self):
-        base = (Path(sys.executable).parent if getattr(sys, "frozen", False)
-                else Path(__file__).resolve().parent.parent.parent)
-        ico = base / "assets" / "icon.ico"
+        ico = _install_dir() / "assets" / "icon.ico"
         if ico.exists():
             try:
                 self.wm_iconbitmap(str(ico))
@@ -180,10 +268,7 @@ class SettingsDialog(ctk.CTkToplevel):
                      text_color=theme.MUTED).pack(side="left")
         self.theme_seg = ctk.CTkSegmentedButton(
             row, values=[t("theme_dark"), t("theme_light")],
-            selected_color=theme.SEL, text_color=theme.TEXT,
-            selected_hover_color=theme.SEL_HOVER,
-            unselected_color=theme.PANEL_2,
-            unselected_hover_color=theme.HOVER)
+            **theme.SEG)
         self.theme_seg.set(
             t("theme_light") if self.settings.get("theme") == "light"
             else t("theme_dark"))
@@ -416,8 +501,110 @@ class SettingsDialog(ctk.CTkToplevel):
                 self.settings["monitoring"])
         self.settings["ai_beta"] = bool(self.ai_switch.get())
         self.settings["curseforge_api_key"] = self.cf_entry.get().strip()
+        lang_changed = self.settings["language"] != \
+            load_settings().get("language")
         save_settings(self.settings)
         theme.apply(self.settings["theme"])       # appliqué immédiatement
         if hasattr(self.master, "_theme_icon"):
             self.master._theme_icon()
+        master = self.master
         self.destroy()
+        toast(master, t("set_restart") if lang_changed else t("set_saved"),
+              "info" if lang_changed else "success",
+              5000 if lang_changed else 2500)
+
+
+class HelpDialog(ctk.CTkToplevel):
+    """Aide : raccourcis clavier, version, dossier des données, liens."""
+    _open = None
+
+    @classmethod
+    def show(cls, master):
+        if cls._open is not None and cls._open.winfo_exists():
+            cls._open.lift()
+            cls._open.focus_force()
+            return cls._open
+        cls._open = cls(master)
+        return cls._open
+
+    SHORTCUTS = (
+        ("Ctrl + N", "sc_new"), ("F5", "sc_start"), ("Maj + F5", "sc_stop"),
+        ("Ctrl + R", "sc_restart"), ("Ctrl + L", "sc_command"),
+        ("↑ / ↓", "sc_history"), ("Ctrl + F", "sc_filter"),
+        ("Ctrl + ,", "sc_settings"), ("F1", "sc_help"),
+    )
+
+    def __init__(self, master):
+        super().__init__(master)
+        self.title(t("help_title"))
+        self.geometry("520x600")
+        self.minsize(460, 420)
+        self.configure(fg_color=theme.BG)
+        self.transient(master)
+        self.after(100, self.lift)
+        self.bind("<Escape>", lambda _e: self.destroy())
+
+        body = ctk.CTkScrollableFrame(self, fg_color=theme.PANEL,
+                                      corner_radius=theme.RADIUS)
+        body.pack(fill="both", expand=True, padx=14, pady=14)
+
+        def section(text):
+            ctk.CTkLabel(body, text=text, font=(theme.FONT, 13, "bold"),
+                         text_color=theme.ACCENT, anchor="w").pack(
+                fill="x", padx=14, pady=(14, 6))
+
+        section(t("help_shortcuts"))
+        for keys, label in self.SHORTCUTS:
+            row = ctk.CTkFrame(body, fg_color="transparent")
+            row.pack(fill="x", padx=14, pady=2)
+            ctk.CTkLabel(row, text=keys, width=96, height=24,
+                         corner_radius=6, fg_color=theme.PANEL_2,
+                         font=(theme.FONT_MONO, 11),
+                         text_color=theme.TEXT).pack(side="left")
+            ctk.CTkLabel(row, text=t(label), font=(theme.FONT, 12),
+                         text_color=theme.TEXT, anchor="w",
+                         justify="left", wraplength=340).pack(
+                side="left", padx=12)
+        ctk.CTkLabel(body, text=t("sc_inventory"), font=(theme.FONT, 11),
+                     text_color=theme.MUTED, anchor="w", justify="left",
+                     wraplength=440).pack(fill="x", padx=14, pady=(8, 0))
+
+        section(t("help_data"))
+        ctk.CTkLabel(body, text=str(APP_DIR), font=(theme.FONT_MONO, 10),
+                     text_color=theme.MUTED, anchor="w", justify="left",
+                     wraplength=440).pack(fill="x", padx=14)
+        btn = dict(height=30, fg_color=theme.PANEL_2,
+                   hover_color=theme.HOVER, text_color=theme.TEXT)
+        ctk.CTkButton(body, command=self._open_data, **btn,
+                      **theme.labelled("folder", t("help_open_data"), "📁")
+                      ).pack(anchor="w", padx=14, pady=(8, 0))
+
+        section(t("help_about"))
+        ctk.CTkLabel(body, text=f"ServerCraft Agent  v{__version__}",
+                     font=(theme.FONT, 13, "bold"), text_color=theme.TEXT,
+                     anchor="w").pack(fill="x", padx=14)
+        ctk.CTkLabel(body, text=t("help_privacy"), font=(theme.FONT, 11),
+                     text_color=theme.MUTED, anchor="w").pack(
+            fill="x", padx=14, pady=(2, 8))
+        links = ctk.CTkFrame(body, fg_color="transparent")
+        links.pack(fill="x", padx=14, pady=(0, 14))
+        if (_install_dir() / "CHANGELOG.md").exists():
+            ctk.CTkButton(links, command=self._open_changelog, **btn,
+                          **theme.labelled("list", t("help_changelog"), "")
+                          ).pack(side="left", padx=(0, 8))
+        ctk.CTkButton(links, command=lambda: webbrowser.open(REPO_URL),
+                      **btn, **theme.labelled("globe", "GitHub", "")
+                      ).pack(side="left")
+
+    def _open_data(self):
+        try:
+            os.startfile(str(APP_DIR))          # Windows
+        except (OSError, AttributeError):
+            webbrowser.open(APP_DIR.as_uri())
+
+    def _open_changelog(self):
+        path = _install_dir() / "CHANGELOG.md"
+        try:
+            os.startfile(str(path))
+        except (OSError, AttributeError):
+            webbrowser.open(path.as_uri())
