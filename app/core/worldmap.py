@@ -249,8 +249,10 @@ def render(server_dir: Path, dimension: str, x: float, z: float,
     img = Image.new("RGB", (size, size), (20, 22, 28))
     px = img.load()
     found = 0
+    # arrondi vers le bas : int() tronque vers zéro et décalait d'un chunk
+    # les positions négatives (x = -0.5 est dans le chunk -1, pas 0)
+    ccx, ccz = math.floor(x) >> 4, math.floor(z) >> 4
     if rdir:
-        ccx, ccz = int(x) >> 4, int(z) >> 4
         min_y = -64 if "nether" not in dimension else 0
         for dz in range(-radius, radius + 1):
             for dx in range(-radius, radius + 1):
@@ -285,8 +287,7 @@ def render(server_dir: Path, dimension: str, x: float, z: float,
                                        min(255, int(b * f)))
                         px[ox + lx, oz + lz] = (r, g, b)
     img = img.resize((size * scale, size * scale), Image.NEAREST)
-    _draw_marker(img, x, z, yaw, ccx - radius if rdir else 0,
-                 ccz - radius if rdir else 0, scale)
+    _draw_marker(img, x, z, yaw, ccx - radius, ccz - radius, scale)
     return img, found
 
 
