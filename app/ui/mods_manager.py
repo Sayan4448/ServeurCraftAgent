@@ -10,7 +10,7 @@ import customtkinter as ctk
 import requests
 from PIL import Image
 
-from ..config import load_settings, save_settings
+from ..config import curseforge_key, load_settings, save_settings
 from ..core import mods as mods_mod
 from ..core.downloader import LOADER_LABELS
 from ..i18n import t
@@ -38,6 +38,7 @@ class ModsManager(ctk.CTkToplevel):
         self._offset = 0
         self._last_query = ""
         self._icon_cache = {}
+        self._more_btn = None
 
         loader_label = LOADER_LABELS.get(meta["loader"], meta["loader"])
         self.title(t("mods_title", name=meta["name"], mc=meta["mc_version"]))
@@ -160,8 +161,16 @@ class ModsManager(ctk.CTkToplevel):
         self.status.configure(text=text)
 
     def _save_cf_key(self):
-        self.settings["curseforge_api_key"] = self.cf_key.get().strip()
-        save_settings(self.settings)
+        """Enregistre la clé saisie (thread Tk uniquement)."""
+        key = self.cf_key.get().strip()
+        if key != self.settings.get("curseforge_api_key", ""):
+            self.settings = load_settings()
+            self.settings["curseforge_api_key"] = key
+            save_settings(self.settings)
+
+    def _api_key(self) -> str:
+        """Clé saisie ici, sinon celle de l'environnement."""
+        return self.cf_key.get().strip() or curseforge_key({})
 
     # ------------------------------------------------------------ icônes
 
@@ -172,17 +181,21 @@ class ModsManager(ctk.CTkToplevel):
             label.configure(image=self._icon_cache[url], text="")
             return
 
-        def work():
+        def work():                   # thread : télécharge seulement
             try:
                 data = requests.get(url, timeout=10).content
                 img = Image.open(BytesIO(data)).convert("RGBA")
-                cimg = ctk.CTkImage(light_image=img, dark_image=img, size=size)
-                self._icon_cache[url] = cimg
-                ui_call(self, lambda: label.configure(image=cimg, text=""))
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001 — icône facultative
+                return
+            ui_call(self, self._icon_ready, url, img, size, label)
 
         threading.Thread(target=work, daemon=True).start()
+
+    def _icon_ready(self, url, img, size, label):
+        cimg = ctk.CTkImage(light_image=img, dark_image=img, size=size)
+        self._icon_cache[url] = cimg
+        if label.winfo_exists():
+            label.configure(image=cimg, text="")
 
     # ------------------------------------------------------------ recherche
 
@@ -199,13 +212,14 @@ class ModsManager(ctk.CTkToplevel):
         query = self._last_query
         source = self.source_seg.get()
         kind = self._kind()
-        api_key = self.cf_key.get().strip()
+        api_key = self._api_key()
         offset = self._offset
+        if source == "CurseForge":
+            self._save_cf_key()
 
-        def work():
+        def work():                   # thread : aucun appel Tk
             try:
                 if source == "CurseForge":
-                    self._save_cf_key()
                     res = mods_mod.search_curseforge(
                         query, self.meta["loader"], self.meta["mc_version"],
                         kind, api_key, limit=PAGE_SIZE, offset=offset)
@@ -214,14 +228,19 @@ class ModsManager(ctk.CTkToplevel):
                         query, self.meta["loader"], self.meta["mc_version"],
                         kind, limit=PAGE_SIZE, offset=offset)
                 ui_call(self, self._show_results, res)
-            except Exception as e:
-                ui_call(self, self._set_status, t("mods_error", e=e))
+            except Exception as e:  # noqa: BLE001
+                ui_call(self, self._set_status,
+                        t("mods_error", e=mods_mod.explain(e)))
             finally:
                 self._busy = False
 
         threading.Thread(target=work, daemon=True).start()
 
     def _show_results(self, results):
+        if self._more_btn is not None:      # l'ancien « Charger plus »
+            if self._more_btn.winfo_exists():
+                self._more_btn.destroy()
+            self._more_btn = None
         self._offset += len(results)
         self._set_status(t("mods_results", n=self._offset))
         if not results and self._offset == 0:
@@ -231,11 +250,11 @@ class ModsManager(ctk.CTkToplevel):
         for r in results:
             self._add_result_card(r)
         if len(results) >= PAGE_SIZE:
-            ctk.CTkButton(
+            self._more_btn = ctk.CTkButton(
                 self.results_frame, text=t("mods_load_more"), height=30,
                 fg_color=theme.PANEL_2, hover_color=theme.HOVER,
-                text_color=theme.TEXT, command=self._search,
-            ).pack(pady=8)
+                text_color=theme.TEXT, command=self._search)
+            self._more_btn.pack(pady=8)
 
     def _add_result_card(self, r):
         card = ctk.CTkFrame(self.results_frame, fg_color=theme.PANEL_2,
@@ -287,24 +306,20 @@ class ModsManager(ctk.CTkToplevel):
         btn.configure(state="disabled", text="…")
         self._set_status(t("mods_installing", name=result["title"]))
         self._save_cf_key()
-        api_key = self.cf_key.get().strip()
+        api_key = self._api_key()
 
         def work():
+            replaced = []
             try:
                 path = mods_mod.install_result(
                     result, self.server_dir, self.meta["loader"],
-                    self.meta["mc_version"], api_key=api_key)
-                ui_call(self, lambda: self._set_status(
-                    t("mods_installed_in", file=path.name,
-                      dir=path.parent.name)))
-                ui_call(self, self._refresh_installed)
-                ui_call(self, lambda: btn.configure(
-                    text=t("mods_installed_btn")))
-            except Exception as e:
-                ui_call(self, lambda: self._set_status(
-                    t("mods_error", e=f"{result['title']} : {e}")))
-                ui_call(self, lambda: btn.configure(
-                    state="normal", text=t("mods_install")))
+                    self.meta["mc_version"], api_key=api_key,
+                    replaced=replaced)
+                ui_call(self, self._installed, path, replaced, btn,
+                        t("mods_installed_btn"))
+            except Exception as e:  # noqa: BLE001
+                ui_call(self, self._install_failed, btn,
+                        f"{result['title']} : {mods_mod.explain(e)}")
             finally:
                 self._busy = False
 
@@ -318,23 +333,33 @@ class ModsManager(ctk.CTkToplevel):
         self._set_status(f"⬇ {version['filename']}…")
 
         def work():
+            replaced = []
             try:
                 path = mods_mod.download_to(
                     version["url"], version["filename"], self.server_dir,
-                    self.meta["loader"], result["kind"])
-                ui_call(self, lambda: self._set_status(
-                    t("mods_installed_in", file=path.name,
-                      dir=path.parent.name)))
-                ui_call(self, self._refresh_installed)
-                ui_call(self, lambda: btn.configure(text="✔"))
-            except Exception as e:
-                ui_call(self, lambda: self._set_status(t("mods_error", e=e)))
-                ui_call(self, lambda: btn.configure(
-                    state="normal", text=t("mods_install")))
+                    self.meta["loader"], result["kind"], result=result,
+                    replaced=replaced)
+                ui_call(self, self._installed, path, replaced, btn, "✔")
+            except Exception as e:  # noqa: BLE001
+                ui_call(self, self._install_failed, btn, mods_mod.explain(e))
             finally:
                 self._busy = False
 
         threading.Thread(target=work, daemon=True).start()
+
+    def _installed(self, path, replaced, btn, btn_text):
+        text = t("mods_installed_in", file=path.name, dir=path.parent.name)
+        if replaced:
+            text += f"  ({t('mods_replaced', old=', '.join(replaced))})"
+        self._set_status(text)
+        self._refresh_installed()
+        if btn.winfo_exists():
+            btn.configure(text=btn_text)
+
+    def _install_failed(self, btn, message):
+        self._set_status(t("mods_error", e=message))
+        if btn.winfo_exists():
+            btn.configure(state="normal", text=t("mods_install"))
 
     # ------------------------------------------------------------ installés
 
@@ -368,7 +393,10 @@ class ModsManager(ctk.CTkToplevel):
         name = Path(path).name
         if messagebox.askyesno(t("mods_del"),
                                t("mods_del_confirm", name=name), parent=self):
-            mods_mod.remove_installed(path)
+            try:
+                mods_mod.remove_installed(path)
+            except OSError:           # jar verrouillé par le serveur lancé
+                self._set_status(t("mods_locked", name=name))
             self._refresh_installed()
 
     # ---------------------------------------------------------- modpack
@@ -377,8 +405,7 @@ class ModsManager(ctk.CTkToplevel):
         if not path:
             return
         self._set_status(t("mp_analyzing"))
-        cf_key = self.cf_key.get().strip() or \
-            load_settings().get("curseforge_api_key", "")
+        cf_key = self._api_key() or curseforge_key()
 
         def work():
             from ..core import modpack
@@ -389,7 +416,8 @@ class ModsManager(ctk.CTkToplevel):
                                           self, self._set_status, m))
                 ui_call(self, self._show_modpack_result, result)
             except Exception as e:  # noqa: BLE001
-                ui_call(self, self._set_status, t("mods_error", e=e))
+                ui_call(self, self._set_status,
+                        t("mods_error", e=mods_mod.explain(e)))
         threading.Thread(target=work, daemon=True).start()
 
     def _show_modpack_result(self, result: dict):
@@ -593,27 +621,26 @@ class ModDetailDialog(ctk.CTkToplevel):
         self._load_details()
 
     def _load_details(self):
-        api_key = self.manager.cf_key.get().strip()
+        api_key = self.manager._api_key()
 
         def work():
-            details = {}
+            details, error = {}, ""
             try:
                 details = mods_mod.project_details(self.result, api_key)
-            except Exception:
+            except Exception:  # noqa: BLE001 — fiche facultative
                 pass
             try:
                 versions = mods_mod.version_list(
                     self.result, self.manager.meta["loader"],
                     self.manager.meta["mc_version"], api_key)
-            except Exception as e:
-                ui_call(self, lambda: self.vstatus.configure(
-                    text=t("mods_error", e=e)))
+            except Exception as e:  # noqa: BLE001
+                error = t("mods_error", e=mods_mod.explain(e))
                 versions = []
-            ui_call(self, self._populate, details, versions)
+            ui_call(self, self._populate, details, versions, error)
 
         threading.Thread(target=work, daemon=True).start()
 
-    def _populate(self, details, versions):
+    def _populate(self, details, versions, error=""):
         if details.get("body"):
             self.desc_box.configure(state="normal")
             self.desc_box.delete("1.0", "end")
@@ -629,7 +656,8 @@ class ModDetailDialog(ctk.CTkToplevel):
             self._gallery_thumb(url)
         mc = self.manager.meta["mc_version"]
         self.vstatus.configure(
-            text=t("mods_versions_count", n=len(versions), mc=mc))
+            text=error or t("mods_versions_count", n=len(versions), mc=mc),
+            text_color=theme.RED if error else theme.MUTED)
         if not versions:
             ctk.CTkLabel(self.versions_frame, text=t("mods_no_compat"),
                          text_color=theme.MUTED).pack(pady=14)
@@ -664,19 +692,24 @@ class ModDetailDialog(ctk.CTkToplevel):
                               corner_radius=8)
         holder.pack(side="left", padx=4, pady=4)
 
-        def work():
+        def work():                   # thread : télécharge seulement
             try:
                 data = requests.get(url, timeout=10).content
                 img = Image.open(BytesIO(data)).convert("RGBA")
                 img.thumbnail((240, 140))
-                cimg = ctk.CTkImage(light_image=img, dark_image=img,
-                                    size=img.size)
-                self._gallery_imgs.append(cimg)  # garde la référence
-                ui_call(self, lambda: holder.configure(
-                    image=cimg, text="", cursor="hand2"))
-                holder.bind("<Button-1>",
-                            lambda e, u=url: webbrowser.open(u))
-            except Exception:
-                holder.pack_forget()
+            except Exception:  # noqa: BLE001 — miniature facultative
+                img = None
+            ui_call(self, self._thumb_ready, holder, img, url)
 
         threading.Thread(target=work, daemon=True).start()
+
+    def _thumb_ready(self, holder, img, url):
+        if not holder.winfo_exists():
+            return
+        if img is None:
+            holder.pack_forget()
+            return
+        cimg = ctk.CTkImage(light_image=img, dark_image=img, size=img.size)
+        self._gallery_imgs.append(cimg)  # garde la référence
+        holder.configure(image=cimg, text="", cursor="hand2")
+        holder.bind("<Button-1>", lambda e, u=url: webbrowser.open(u))
