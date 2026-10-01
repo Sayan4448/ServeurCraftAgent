@@ -8,7 +8,8 @@ Produit dist/ServerCraftAgent-<version>-win64.msi
 """
 from cx_Freeze import Executable, setup
 
-APP_VERSION = "1.1.0"
+from app import __version__ as APP_VERSION   # source unique : app/__init__.py
+
 APP_NAME = "ServerCraftAgent"
 
 # Raccourcis créés par l'installateur : Bureau + menu Démarrer.

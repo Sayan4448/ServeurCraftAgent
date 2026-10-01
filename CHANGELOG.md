@@ -1,5 +1,92 @@
 # Versions — ServerCraft Agent
 
+## v1.30.0 — Release (2026-10-01)
+
+**Corrections**
+
+*Inventaire d'un joueur (fiche « Carte & inventaire »)*
+- **Retirer** visait la mauvaise case chez un joueur connecté : le numéro
+  de case du fichier était envoyé tel quel à `/item replace`, alors que la
+  barre d'accès s'appelle `hotbar.0–8` et le reste `inventory.0–26`. Retirer
+  la case 9 vidait la case 18, et les cases 27–35 étaient refusées par le
+  serveur
+- **Déplacer** un objet n'existait pas : glisser-déposer d'une case à
+  l'autre (échange si la case d'arrivée est occupée), en ligne par commandes
+  — l'objet garde ses enchantements, son nom et sa durabilité — ou hors
+  ligne dans le `.dat` (format `equipment` 1.21.5+ compris)
+- Chaque modification attend la **réponse du serveur** : le succès n'est
+  annoncé que s'il est confirmé, un refus est affiché, puis l'inventaire
+  réel est relu
+- **« Tout supprimer »** : « Non » est le choix par défaut, le texte dit ce
+  qui va être vidé, et depuis l'onglet Ender chest seul l'Ender chest l'est
+- « Donner » hors ligne plantait sur un inventaire vide (liste NBT sans
+  type écrite par le jeu) ; le `.dat` est relu juste avant d'être modifié
+- Clic droit ou touche Suppr pour retirer ; l'erreur de rendu de la
+  mini-carte s'affiche enfin
+
+*Création d'un serveur, plugins et clé CurseForge*
+- Un plugin ou un mod installé deux fois ne laisse plus **deux jars** du
+  même projet : la nouvelle version remplace l'ancienne (les fichiers déjà
+  présents sont reconnus par leur empreinte via Modrinth)
+- Une **version stable** est préférée à une bêta plus récente
+- **Clé API CurseForge** : jamais fournie avec l'app. Clé absente, refusée
+  (invalide ou expirée), pas de réseau, quota dépassé → message clair, sans
+  jamais afficher la clé. Bouton **« Tester »** dans ⚙ Paramètres, repli sur
+  la variable d'environnement `CURSEFORGE_API_KEY`, réglages écrits de
+  façon atomique
+- Plasmo Voice ne reçoit plus un fichier de config Simple Voice Chat
+- Créateur : changer de type de serveur pendant le chargement pouvait
+  afficher les versions d'un autre type ; port hors 1–65535 refusé
+
+*Stabilité*
+- Un **redémarrage** d'un serveur cross-play était pris pour un crash
+  (fausse alerte Discord, relance en double)
+- ⚙ Config : une RAM à 0 ou un port non numérique étaient enregistrés et
+  empêchaient le serveur de démarrer ; désactiver le cross-play serveur
+  lancé interrompait l'enregistrement
+- Éditeurs de tunnels et de commandes planifiées : une ligne ajoutée après
+  une suppression se superposait à une autre
+- Gestionnaire de mods : plus d'appels à l'interface depuis les threads,
+  un seul bouton « Charger plus », suppression d'un jar verrouillé signalée
+- Fenêtre console noire au lancement de l'app installée ; mini-carte
+  décalée d'un chunk en coordonnées négatives ; joueurs Bedrock (pseudo
+  préfixé par Floodgate) non détectés à la connexion ; un
+  `servercraft.json` incomplet faisait planter la liste des serveurs
+- Installation depuis les sources : **Pillow** manquait dans
+  `requirements.txt`
+
+*Agent IA (bêta)*
+- Un retour à la ligne dans une raison générée par le modèle pouvait
+  exécuter une deuxième commande dans la console : une commande = une ligne
+- L'agent pouvait sortir du dossier du serveur (comparaison de préfixes)
+
+**Interface**
+- **Icônes nettes** à la place des émojis (police d'icônes de Windows,
+  aucune dépendance ajoutée), boutons segmentés unifiés, thème clair et
+  sombre cohérents
+- **Notifications** discrètes en bas à droite (succès, erreur, information)
+  et infobulles sur les boutons sans texte
+- Inventaire : survol des cases comme dans le jeu, objet qui suit la souris
+  pendant le déplacement, quantités plus fines
+- Fenêtre serveur : l'adresse IP n'est plus recouverte par les boutons
+- Liste des serveurs : survol, état vide avec bouton « Créer un serveur » ;
+  texte d'attente dans les consoles vides ; version affichée dans l'en-tête
+
+**Nouveautés**
+- **Console** : historique des commandes (↑ / ↓), filtre, copie, effacement
+- **Whitelist** : nouvel onglet du panneau joueurs (activer, ajouter,
+  retirer), serveur lancé ou arrêté
+- **Dupliquer un serveur** : copie complète (monde, mods, configs) sur un
+  port libre, pour tester sans risque
+- **Port déjà utilisé** : détecté avant le lancement, avec le nom du
+  programme qui l'occupe
+- **Raccourcis clavier** : Ctrl+N, F5, Maj+F5, Ctrl+R, Ctrl+L, Ctrl+F,
+  Ctrl+virgule ; **aide** (F1) avec la liste et le dossier des données
+
+**Sous le capot**
+- Première suite de tests automatiques (`python -m pytest`, 144 tests,
+  sans réseau ni Java)
+
 ## v1.1.0 — Release (2026-09-30)
 
 **IP gratuite automatique avec Playit.gg** (sans ouvrir de port ni donner
