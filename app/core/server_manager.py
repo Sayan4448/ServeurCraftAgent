@@ -86,10 +86,17 @@ def list_servers() -> list:
         if d.is_dir() and meta_file.exists():
             try:
                 meta = load_meta(d)
+                # fichier incomplet ou modifié à la main : dossier ignoré
+                # plutôt que de faire planter toute la liste
+                if not isinstance(meta, dict) or not all(
+                        meta.get(k) for k in ("loader", "mc_version")):
+                    continue
+                meta["name"] = d.name       # le dossier fait foi
                 meta["dir"] = str(d)
-                meta["running"] = meta["name"] in PROCESSES and PROCESSES[meta["name"]].is_running()
+                meta["running"] = d.name in PROCESSES and \
+                    PROCESSES[d.name].is_running()
                 out.append(meta)
-            except (json.JSONDecodeError, OSError):
+            except (ValueError, OSError):
                 continue
     return out
 
@@ -196,10 +203,13 @@ def create_server(options: dict, progress_cb=None, log=print) -> dict:
                 path, loader, mc_version, voice, progress_cb=pct
             )
             log(f"Installé : {mod_file.name}")
-            mods_mod.write_voicechat_config(
-                path, loader, mods_mod.DEFAULT_VOICE_PORT, ""
-            )
-            log("Config Voice Chat pré-générée (UDP 24454).")
+            # voicechat-server.properties est le fichier de Simple Voice
+            # Chat : Plasmo Voice a sa propre config et l'ignore
+            if voice == "simple_voice_chat":
+                mods_mod.write_voicechat_config(
+                    path, loader, mods_mod.DEFAULT_VOICE_PORT, ""
+                )
+                log("Config Voice Chat pré-générée (UDP 24454).")
 
         # 5b) Cross-play Bedrock + sécurité des comptes crack
         accounts = options.get("accounts",

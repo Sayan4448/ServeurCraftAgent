@@ -65,12 +65,30 @@ def load_settings() -> dict:
     settings = dict(DEFAULT_SETTINGS)
     if SETTINGS_FILE.exists():
         try:
-            settings.update(json.loads(SETTINGS_FILE.read_text(encoding="utf-8")))
+            data = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                settings.update(data)
         except (json.JSONDecodeError, OSError):
             pass
     return settings
 
 
 def save_settings(settings: dict) -> None:
+    """Écriture atomique : un plantage en cours d'écriture ne laisse pas un
+    fichier tronqué (qui ferait perdre les clés API et les réglages)."""
     ensure_dirs()
-    SETTINGS_FILE.write_text(json.dumps(settings, indent=2), encoding="utf-8")
+    tmp = SETTINGS_FILE.with_name(SETTINGS_FILE.name + ".tmp")
+    tmp.write_text(json.dumps(settings, indent=2), encoding="utf-8")
+    os.replace(tmp, SETTINGS_FILE)
+
+
+CF_KEY_ENV = "CURSEFORGE_API_KEY"
+
+
+def curseforge_key(settings: dict | None = None) -> str:
+    """Clé API CurseForge : celle des Paramètres, sinon la variable
+    d'environnement CURSEFORGE_API_KEY. Jamais de clé livrée avec l'app :
+    les conditions de l'API interdisent de partager une clé."""
+    key = ((settings if settings is not None else load_settings())
+           .get("curseforge_api_key") or "").strip()
+    return key or os.environ.get(CF_KEY_ENV, "").strip()

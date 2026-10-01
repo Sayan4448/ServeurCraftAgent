@@ -231,23 +231,18 @@ def plan(pack: dict, cf_key: str = "", log=print) -> dict:
         overrides = [("overrides/", ""), ("server-overrides/", "")]
 
     elif fmt == "curseforge":
-        if not cf_key:
-            raise ModpackError("Ce modpack CurseForge nécessite une clé API "
-                               "CurseForge (⚙ Paramètres).")
-        ids = [f["fileID"] for f in pack.get("files", [])
+        from . import mods as mods_mod
+        ids =[f["fileID"] for f in pack.get("files", [])
                if f.get("required", True) and "fileID" in f]
         log(f"CurseForge : résolution de {len(ids)} fichier(s)…")
         data = []
         for i in range(0, len(ids), 500):
-            r = requests.post(f"{CURSEFORGE}/mods/files",
-                              json={"fileIds": ids[i:i + 500]},
-                              headers={**HEADERS, "x-api-key": cf_key,
-                                       "Accept": "application/json"},
-                              timeout=60)
-            if r.status_code in (401, 403):
-                raise ModpackError("Clé API CurseForge refusée.")
-            r.raise_for_status()
-            data += r.json().get("data", [])
+            try:                      # clé refusée, quota, réseau…
+                data += mods_mod.cf_request(
+                    "POST", "/mods/files", cf_key, timeout=60,
+                    json={"fileIds": ids[i:i + 500]}).get("data", [])
+            except mods_mod.ModError as e:
+                raise ModpackError(str(e)) from e
         for f in data:
             fid = str(f["id"])
             url = f.get("downloadUrl") or \

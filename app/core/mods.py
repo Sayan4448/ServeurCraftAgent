@@ -1,9 +1,11 @@
 """Mods & plugins : sources Modrinth + CurseForge, install, et Playit.gg."""
+import hashlib
 import json
 from pathlib import Path
 
 import requests
 
+from ..i18n import t
 from .downloader import MOD_LOADERS, PLUGIN_LOADERS, download_file
 from .properties import load_properties, save_properties, update_properties
 
@@ -41,8 +43,122 @@ CF_CLASS_PLUGIN = 5
 DEFAULT_VOICE_PORT = 24454
 
 
+# Origine des fichiers installés par l'app : {"plugins/X.jar": {"source":
+# "modrinth", "project": "<id>"}} — sert à remplacer l'ancienne version d'un
+# projet au lieu de laisser deux jars du même mod côte à côte.
+MANIFEST = ".servercraft-mods.json"
+
+
 class ModError(Exception):
     pass
+
+
+def explain(e: Exception) -> str:
+    """Message lisible pour une erreur de téléchargement / d'API."""
+    if isinstance(e, ModError):
+        return str(e)
+    if isinstance(e, requests.Timeout):
+        return t("net_err_timeout")
+    if isinstance(e, requests.ConnectionError):
+        return t("net_err_offline")
+    if isinstance(e, requests.HTTPError) and e.response is not None:
+        return t("net_err_http", code=e.response.status_code)
+    return str(e)
+
+
+# ------------------------------------------------- suivi des installations
+
+def _manifest(server_dir: Path) -> dict:
+    try:
+        data = json.loads((Path(server_dir) / MANIFEST).read_text(
+            encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _sha1(path: Path) -> str:
+    h = hashlib.sha1()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _identify_modrinth(folder: Path, known: set) -> dict:
+    """{nom de fichier: id de projet Modrinth, ou "" si Modrinth ne le
+    connaît pas} pour les jars du dossier pas encore suivis (installés à la
+    main ou par une ancienne version). Vide si Modrinth est injoignable."""
+    hashes = {}
+    for f in folder.glob("*.jar"):
+        if f.name not in known:
+            try:
+                hashes[_sha1(f)] = f.name
+            except OSError:
+                pass
+    if not hashes:
+        return {}
+    try:
+        r = requests.post(f"{MODRINTH_API}/version_files",
+                          json={"hashes": list(hashes), "algorithm": "sha1"},
+                          headers=_UA, timeout=20)
+        r.raise_for_status()
+        found = r.json()
+    except (requests.RequestException, ValueError):
+        return {}
+    return {name: str((found.get(h) or {}).get("project_id") or "")
+            for h, name in hashes.items()}
+
+
+def record_install(server_dir: Path, dest: Path, source: str,
+                   project) -> list:
+    """Note l'origine de `dest` et retire les autres versions du même projet
+    dans le même dossier (deux jars du même mod font planter le serveur).
+    Retourne les noms des fichiers retirés ; un fichier verrouillé par un
+    serveur lancé est laissé en place."""
+    server_dir, dest = Path(server_dir), Path(dest)
+    project = str(project)
+    folder = dest.parent
+    sub = folder.name
+    data = {rel: info for rel, info in _manifest(server_dir).items()
+            if (server_dir / rel).exists()}
+    if source == "modrinth":
+        known = {Path(rel).name for rel in data
+                 if Path(rel).parent.name == sub}
+        for name, pid in _identify_modrinth(folder,
+                                            known | {dest.name}).items():
+            data[f"{sub}/{name}"] = {"source": "modrinth" if pid else "other",
+                                     "project": pid}
+    removed = []
+    for rel, info in list(data.items()):
+        f = server_dir / rel
+        if f == dest or f.parent != folder or \
+                info.get("source") != source or \
+                str(info.get("project")) != project:
+            continue
+        try:
+            f.unlink()
+        except OSError:
+            continue
+        removed.append(f.name)
+        del data[rel]
+    data[f"{sub}/{dest.name}"] = {"source": source, "project": project}
+    try:
+        (server_dir / MANIFEST).write_text(json.dumps(data, indent=2),
+                                           encoding="utf-8")
+    except OSError:
+        pass
+    return removed
+
+
+def _best_version(versions: list) -> dict:
+    """Version la plus récente, en préférant une release stable à une
+    bêta / alpha plus récente (la liste est déjà triée par date)."""
+    for kind in ("release", "beta", "alpha"):
+        for v in versions:
+            if v.get("version_type", "release") == kind:
+                return v
+    return versions[0]
 
 
 # ------------------------------------------------------------- helpers dossiers
@@ -151,20 +267,27 @@ def _modrinth_versions(project: str, loaders: list, mc_version: str) -> list:
 
 
 def install_modrinth(project_slug: str, server_dir: Path, loader: str,
-                     mc_version: str, kind: str, progress_cb=None) -> Path:
+                     mc_version: str, kind: str, progress_cb=None,
+                     replaced: list | None = None) -> Path:
+    """Installe la dernière version compatible (release de préférence).
+    `replaced` : liste complétée avec les anciennes versions retirées."""
     loaders = LOADER_MAP.get(loader, [loader])
     if loader == "mohist":
         loaders = ["forge"] if kind == "mod" else ["bukkit", "paper", "spigot"]
     versions = _modrinth_versions(project_slug, loaders, mc_version)
     if not versions:
         raise ModError(f"{project_slug} : aucune version pour {mc_version}")
-    files = versions[0].get("files", [])
-    jar = next((f for f in files if f.get("primary")), None) or next(
-        (f for f in files if f["filename"].endswith(".jar")), None)
+    version = _best_version(versions)
+    jar = _pick_jar(version.get("files", []))
     if not jar:
         raise ModError(f"{project_slug} : aucun fichier .jar téléchargeable")
     dest = target_dir(server_dir, loader, kind) / jar["filename"]
-    return download_file(jar["url"], dest, progress_cb)
+    download_file(jar["url"], dest, progress_cb)
+    old = record_install(server_dir, dest, "modrinth",
+                         version.get("project_id") or project_slug)
+    if replaced is not None:
+        replaced += old
+    return dest
 
 
 # ----------------------------------------------------------------- CurseForge
@@ -173,13 +296,45 @@ def _cf_headers(api_key: str) -> dict:
     return {**_UA, "x-api-key": api_key, "Accept": "application/json"}
 
 
+def cf_request(method: str, path: str, api_key: str, timeout: float = 20,
+               **kw):
+    """Appel à l'API CurseForge -> JSON. Toute erreur devient une ModError
+    au message clair (clé absente, refusée, pas de réseau, quota, panne) ;
+    la clé n'apparaît jamais dans le message."""
+    key = (api_key or "").strip()
+    if not key:
+        raise ModError(t("cf_err_nokey"))
+    try:
+        r = requests.request(method, f"{CURSEFORGE_API}{path}",
+                             headers=_cf_headers(key), timeout=timeout, **kw)
+    except requests.Timeout as e:
+        raise ModError(t("net_err_timeout")) from e
+    except requests.RequestException as e:
+        raise ModError(t("cf_err_net")) from e
+    if r.status_code in (401, 403):
+        raise ModError(t("cf_err_key"))
+    if r.status_code == 429:
+        raise ModError(t("cf_err_rate"))
+    if r.status_code == 404:
+        raise ModError(t("cf_err_notfound"))
+    if not r.ok:
+        raise ModError(t("cf_err_down", code=r.status_code))
+    try:
+        return r.json()
+    except ValueError as e:
+        raise ModError(t("cf_err_down", code=r.status_code)) from e
+
+
+def check_curseforge_key(api_key: str) -> None:
+    """Vérifie la clé auprès de CurseForge ; lève ModError si elle est
+    absente, invalide ou expirée, ou si le service est injoignable."""
+    cf_request("GET", "/games/432", api_key, timeout=10)
+
+
 def search_curseforge(query: str, loader: str, mc_version: str,
                       kind: str, api_key: str, limit: int = 20,
                       offset: int = 0) -> list:
     """Recherche CurseForge. Nécessite une clé API (console.curseforge.com)."""
-    if not api_key:
-        raise ModError("CurseForge nécessite une clé API "
-                       "(console.curseforge.com — gratuite).")
     class_id = CF_CLASS_PLUGIN if kind == "plugin" else CF_CLASS_MOD
     params = {
         "gameId": 432, "classId": class_id, "searchFilter": query,
@@ -190,13 +345,9 @@ def search_curseforge(query: str, loader: str, mc_version: str,
         params["gameVersion"] = mc_version
     if kind == "mod" and loader in CF_MODLOADER:
         params["modLoaderType"] = CF_MODLOADER[loader]
-    r = requests.get(f"{CURSEFORGE_API}/mods/search", params=params,
-                     headers=_cf_headers(api_key), timeout=20)
-    if r.status_code == 403:
-        raise ModError("Clé API CurseForge invalide.")
-    r.raise_for_status()
+    data = cf_request("GET", "/mods/search", api_key, params=params)
     out = []
-    for m in r.json().get("data", []):
+    for m in data.get("data", []):
         out.append({
             "id": m["id"], "slug": m.get("slug", str(m["id"])),
             "title": m["name"], "description": (m.get("summary") or "")[:200],
@@ -233,20 +384,14 @@ def modrinth_project(slug: str) -> dict:
 
 def curseforge_project(mod_id: int, api_key: str) -> dict:
     """Fiche CurseForge : description HTML brute → texte, screenshots, liens."""
-    r = requests.get(f"{CURSEFORGE_API}/mods/{mod_id}",
-                     headers=_cf_headers(api_key), timeout=20)
-    r.raise_for_status()
-    m = r.json()["data"]
+    m = cf_request("GET", f"/mods/{mod_id}", api_key)["data"]
     body = ""
     try:
-        d = requests.get(f"{CURSEFORGE_API}/mods/{mod_id}/description",
-                         headers=_cf_headers(api_key), timeout=20)
-        if d.ok:
-            import re as _re
-            body = _re.sub(r"<[^>]+>", " ",
-                           d.json().get("data", "") or "")
-            body = _re.sub(r"\s+", " ", body).strip()
-    except requests.RequestException:
+        d = cf_request("GET", f"/mods/{mod_id}/description", api_key)
+        import re as _re
+        body = _re.sub(r"<[^>]+>", " ", d.get("data", "") or "")
+        body = _re.sub(r"\s+", " ", body).strip()
+    except ModError:
         pass
     return {
         "title": m["name"], "description": m.get("summary", ""),
@@ -270,36 +415,42 @@ def project_details(result: dict, api_key: str = "") -> dict:
 
 def install_curseforge(mod_id: int, server_dir: Path, loader: str,
                        mc_version: str, kind: str, api_key: str,
-                       progress_cb=None) -> Path:
+                       progress_cb=None,
+                       replaced: list | None = None) -> Path:
     params = {"pageSize": 50}
     if mc_version:
         params["gameVersion"] = mc_version
     if kind == "mod" and loader in CF_MODLOADER:
         params["modLoaderType"] = CF_MODLOADER[loader]
-    r = requests.get(f"{CURSEFORGE_API}/mods/{mod_id}/files", params=params,
-                     headers=_cf_headers(api_key), timeout=20)
-    r.raise_for_status()
-    files = r.json().get("data", [])
+    files = cf_request("GET", f"/mods/{mod_id}/files", api_key,
+                       params=params).get("data", [])
     if not files:
         raise ModError(f"CurseForge mod {mod_id} : aucun fichier compatible.")
-    f = files[0]
+    # releaseType : 1 = release, 2 = bêta, 3 = alpha
+    f = min(files, key=lambda x: x.get("releaseType") or 1)
     url = f.get("downloadUrl")
     if not url:
         # Distribution restreinte : URL forgecdn reconstruite
         fid = str(f["id"])
         url = f"{FORGECDN}/{fid[:4]}/{int(fid[4:])}/{f['fileName']}"
     dest = target_dir(server_dir, loader, kind) / f["fileName"]
-    return download_file(url, dest, progress_cb)
+    download_file(url, dest, progress_cb)
+    old = record_install(server_dir, dest, "curseforge", mod_id)
+    if replaced is not None:
+        replaced += old
+    return dest
 
 
 def install_result(result: dict, server_dir: Path, loader: str,
-                   mc_version: str, api_key: str = "", progress_cb=None) -> Path:
+                   mc_version: str, api_key: str = "", progress_cb=None,
+                   replaced: list | None = None) -> Path:
     if result["source"] == "curseforge":
         return install_curseforge(result["id"], server_dir, loader,
                                   mc_version, result["kind"], api_key,
-                                  progress_cb)
+                                  progress_cb, replaced)
     return install_modrinth(result["slug"], server_dir, loader,
-                            mc_version, result["kind"], progress_cb)
+                            mc_version, result["kind"], progress_cb,
+                            replaced)
 
 
 # ------------------------------------------------- versions par projet + dl
@@ -340,12 +491,10 @@ def curseforge_version_list(mod_id: int, loader: str, mc_version: str,
         params["gameVersion"] = mc_version
     if kind == "mod" and loader in CF_MODLOADER:
         params["modLoaderType"] = CF_MODLOADER[loader]
-    r = requests.get(f"{CURSEFORGE_API}/mods/{mod_id}/files", params=params,
-                     headers=_cf_headers(api_key), timeout=20)
-    r.raise_for_status()
+    data = cf_request("GET", f"/mods/{mod_id}/files", api_key, params=params)
     types = {1: "release", 2: "beta", 3: "alpha"}
     out = []
-    for f in r.json().get("data", []):
+    for f in data.get("data", []):
         url = f.get("downloadUrl")
         if not url:
             fid = str(f["id"])
@@ -371,9 +520,18 @@ def version_list(result: dict, loader: str, mc_version: str,
 
 
 def download_to(url: str, filename: str, server_dir: Path, loader: str,
-                kind: str, progress_cb=None) -> Path:
+                kind: str, progress_cb=None, result: dict | None = None,
+                replaced: list | None = None) -> Path:
+    """Télécharge une version précise. `result` (résultat de recherche) :
+    permet de remplacer la version déjà installée du même projet."""
     dest = target_dir(server_dir, loader, kind) / filename
-    return download_file(url, dest, progress_cb)
+    download_file(url, dest, progress_cb)
+    if result:
+        old = record_install(server_dir, dest, result["source"],
+                             result["id"])
+        if replaced is not None:
+            replaced += old
+    return dest
 
 
 # ---------------------------------------------------------------- Voice Chat
@@ -393,14 +551,15 @@ def install_voice_mod(
         raise ModError(
             f"{VOICE_LABELS[which]} : aucune version trouvée pour {loader} {mc_version}"
         )
-    files = versions[0].get("files", [])
-    jar = next((f for f in files if f.get("primary")), None) or next(
-        (f for f in files if f["filename"].endswith(".jar")), None)
+    version = _best_version(versions)
+    jar = _pick_jar(version.get("files", []))
     if not jar:
         raise ModError(f"{VOICE_LABELS[which]} : aucun fichier .jar téléchargeable")
 
     dest = target_dir(server_dir, loader, kind) / jar["filename"]
     download_file(jar["url"], dest, progress_cb)
+    record_install(server_dir, dest, "modrinth",
+                   version.get("project_id") or project)
     return dest
 
 

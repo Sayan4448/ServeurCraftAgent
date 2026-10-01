@@ -6,8 +6,9 @@ from pathlib import Path
 import customtkinter as ctk
 from tkinter import messagebox
 
-from ..config import load_settings, save_settings
+from ..config import curseforge_key, load_settings, save_settings
 from ..core import discord, playit
+from ..core import mods as mods_mod
 from ..i18n import LANGS, t
 from . import theme
 from .playit_panel import PlayitPanel
@@ -243,6 +244,18 @@ class SettingsDialog(ctk.CTkToplevel):
             text_color=theme.TEXT)
         self.cf_entry.insert(0, self.settings.get("curseforge_api_key", ""))
         self.cf_entry.pack(side="left")
+        self.cf_test_btn = ctk.CTkButton(
+            row, text=t("cf_key_test"), width=70, fg_color=theme.PANEL_2,
+            hover_color=theme.HOVER, text_color=theme.TEXT,
+            command=self._cf_test)
+        self.cf_test_btn.pack(side="left", padx=(6, 0))
+        env_key = not self.settings.get("curseforge_api_key") and \
+            curseforge_key({})
+        self.cf_status = ctk.CTkLabel(
+            card, text=t("cf_key_env") if env_key else "",
+            font=(theme.FONT, 10), text_color=theme.MUTED, anchor="w",
+            wraplength=440, justify="left")
+        self.cf_status.pack(anchor="w", padx=14)
         ctk.CTkLabel(card, text=t("cf_key_hint"), font=(theme.FONT, 10),
                      text_color=theme.MUTED, wraplength=440,
                      justify="left").pack(anchor="w", padx=14, pady=(0, 8))
@@ -307,6 +320,28 @@ class SettingsDialog(ctk.CTkToplevel):
         ctk.CTkButton(self, text=t("save_close"), width=140,
                       fg_color=theme.ACCENT, hover_color=theme.ACCENT_HOVER,
                       command=self._save).pack(pady=10)
+
+    def _cf_test(self):
+        """Vérifie la clé saisie (ou celle de l'environnement) auprès de
+        CurseForge, sans l'enregistrer."""
+        key = self.cf_entry.get().strip() or curseforge_key({})
+        self.cf_test_btn.configure(state="disabled")
+        self.cf_status.configure(text=t("cf_key_testing"),
+                                 text_color=theme.MUTED)
+
+        def work():                   # thread : requête HTTP
+            try:
+                mods_mod.check_curseforge_key(key)
+                ui_call(self, self._cf_tested, "")
+            except Exception as e:  # noqa: BLE001
+                ui_call(self, self._cf_tested, mods_mod.explain(e))
+        threading.Thread(target=work, daemon=True).start()
+
+    def _cf_tested(self, err):
+        self.cf_test_btn.configure(state="normal")
+        self.cf_status.configure(
+            text=err or t("cf_key_ok"),
+            text_color=theme.RED if err else theme.GREEN)
 
     def _dc_test(self):
         url = self.dc_entry.get().strip()
