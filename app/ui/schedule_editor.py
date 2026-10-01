@@ -37,7 +37,9 @@ class ScheduleEditor(ctk.CTkFrame):
                                           padx=3, pady=(8, 0))
 
     def add_row(self, task: dict):
-        r = len(self._rows) + 1
+        # compteur jamais réutilisé : après la suppression d'une ligne du
+        # milieu, len(rows) + 1 retombait sur une ligne encore affichée
+        self._next_row = r = getattr(self, "_next_row", 0) + 1
         mode = ctk.CTkOptionMenu(
             self.rows_frame, values=list(self._modes.values()), width=140,
             height=30, fg_color=theme.PANEL_2, button_color=theme.ACCENT,

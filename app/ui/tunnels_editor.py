@@ -56,7 +56,9 @@ class TunnelsEditor(ctk.CTkFrame):
             self.add_row(tn)
 
     def add_row(self, tn: dict):
-        r = len(self._rows) + 1
+        # compteur jamais réutilisé : après la suppression d'une ligne du
+        # milieu, len(rows) + 1 retombait sur une ligne encore affichée
+        self._next_row = r = getattr(self, "_next_row", 0) + 1
         name = ctk.CTkEntry(self.rows_frame, width=100, **_E)
         name.insert(0, tn.get("name", ""))
         proto = ctk.CTkOptionMenu(
