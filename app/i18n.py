@@ -2625,6 +2625,20 @@ _V130 = {
         "{name} を削除できません：ファイルが使用中です（先にサーバーを停止してください）。",
         "No se puede eliminar {name}: el archivo está en uso (detén primero el servidor).",
         "{name} kann nicht gelöscht werden: Datei wird verwendet (zuerst den Server stoppen)."),
+    "ss_bad_players": (
+        "Nombre de joueurs invalide — entre un nombre entier (ex : 20).",
+        "Invalid player count — enter a whole number (e.g. 20).",
+        "Неверное число игроков — введите целое число (напр. 20).",
+        "プレイヤー数が無効です — 整数を入力してください（例：20）。",
+        "Número de jugadores no válido — escribe un número entero (ej.: 20).",
+        "Ungültige Spielerzahl — ganze Zahl eingeben (z. B. 20)."),
+    "cp_locked": (
+        "✔ Enregistré — mais le cross-play reste activé : ses fichiers sont utilisés par le serveur lancé. Arrête le serveur puis désactive-le à nouveau.",
+        "✔ Saved — but cross-play stays enabled: its files are in use by the running server. Stop the server, then turn it off again.",
+        "✔ Сохранено — но кроссплей остаётся включённым: его файлы используются запущенным сервером. Остановите сервер и отключите его снова.",
+        "✔ 保存しました — ただしクロスプレイは有効のままです：稼働中のサーバーがファイルを使用しています。サーバーを停止してからもう一度無効にしてください。",
+        "✔ Guardado — pero el cross-play sigue activado: el servidor en marcha usa sus archivos. Detén el servidor y desactívalo de nuevo.",
+        "✔ Gespeichert — Cross-Play bleibt aber aktiv: seine Dateien werden vom laufenden Server verwendet. Server stoppen und erneut deaktivieren."),
     "pc_hint_drag": (
         "Glisse un objet pour le déplacer · clic droit ou Suppr pour le retirer.",
         "Drag an item to move it · right-click or Del to remove it.",

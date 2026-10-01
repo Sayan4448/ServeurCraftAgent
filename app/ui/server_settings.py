@@ -11,7 +11,8 @@ from ..core import crossplay, scheduler
 from ..core import server_manager as sm
 from ..core import tunnels as tunnels_mod
 from ..core.backups import DEFAULT_KEEP
-from ..core.properties import load_properties, update_properties
+from ..core.properties import (load_properties, parse_count, parse_port,
+                               parse_ram_mb, update_properties)
 from ..i18n import t
 from . import theme
 from .schedule_editor import ScheduleEditor
@@ -331,6 +332,19 @@ class ServerSettings(ctk.CTkToplevel):
         except ValueError as e:
             messagebox.showerror(t("ss_sched"), str(e), parent=self)
             return
+        # rien n'est écrit tant qu'une valeur est invalide : un port non
+        # numérique ou une RAM à 0 empêchait le serveur de démarrer
+        ram_mb = parse_ram_mb(self._widgets["ram"].get())
+        port = parse_port(self._widgets["port"].get().strip() or "25565")
+        max_players = parse_count(
+            self._widgets["max_players"].get().strip() or "20")
+        for value, message in ((ram_mb, t("cre_bad_ram")),
+                               (port, t("cre_bad_port")),
+                               (max_players, t("ss_bad_players"))):
+            if value is None:
+                messagebox.showerror(t("ss_title", name=self.meta["name"]),
+                                     message, parent=self)
+                return
         changes = dict(self._free_props)
         for key, label, kind, _v in _PROPS:
             w = self._widgets[key]
@@ -345,9 +359,8 @@ class ServerSettings(ctk.CTkToplevel):
         accounts = ("premium" if acc_label == t("acc_premium")
                     else "crack" if acc_label == t("acc_crack") else "both")
         changes["online-mode"] = "true" if accounts == "premium" else "false"
-        changes["server-port"] = self._widgets["port"].get().strip() or "25565"
-        changes["max-players"] = (
-            self._widgets["max_players"].get().strip() or "20")
+        changes["server-port"] = str(port)
+        changes["max-players"] = str(max_players)
         try:
             update_properties(self.dir / "server.properties", changes)
         except OSError as e:
@@ -356,18 +369,20 @@ class ServerSettings(ctk.CTkToplevel):
             return
 
         # métadonnées (RAM + port pour le lancement)
-        try:
-            self.meta["ram_mb"] = int(
-                float(self._widgets["ram"].get().replace(",", ".")) * 1024)
-        except ValueError:
-            self.meta["ram_mb"] = 4096
+        self.meta["ram_mb"] = ram_mb
         self.meta["accounts"] = accounts
         self.meta["online_mode"] = accounts == "premium"
-        try:
-            self.meta["port"] = int(changes["server-port"])
-        except ValueError:
-            self.meta["port"] = 25565
+        self.meta["port"] = port
         want_cp = bool(self.cp_switch.get())
+        cp_locked = False
+        if not want_cp and crossplay.installed(self.dir):
+            try:
+                crossplay.uninstall(self.dir, self.meta.get("loader", ""))
+            except crossplay.CrossplayError:
+                # jars utilisés par le serveur lancé : le cross-play reste
+                # activé, le reste de la configuration est enregistré
+                want_cp = cp_locked = True
+                self.cp_switch.select()
         self.meta["crossplay"] = want_cp
         self.meta["tunnels"] = self.tunnels_editor.get()
         self.meta["playit_auto"] = bool(self.playit_switch.get())
@@ -401,8 +416,6 @@ class ServerSettings(ctk.CTkToplevel):
         if want_cp and not crossplay.installed(self.dir):
             jobs.append(lambda log: crossplay.install(self.dir, loader, mc,
                                                       log=log))
-        elif not want_cp and crossplay.installed(self.dir):
-            crossplay.uninstall(self.dir, loader)
         if accounts == "both" and not self._has_auth():
             jobs.append(lambda log: crossplay.install_auth(self.dir, loader,
                                                            mc, log=log))
@@ -424,6 +437,9 @@ class ServerSettings(ctk.CTkToplevel):
                     self._write_meta()
                 ui_call(self, self._jobs_done, ok, msgs[-1] if msgs else "")
             threading.Thread(target=work, daemon=True).start()
+        elif cp_locked:
+            self.status.configure(text=t("cp_locked"),
+                                  text_color=theme.ORANGE)
         else:
             self.status.configure(text=t("ss_saved"), text_color=theme.GREEN)
         if self.on_saved:

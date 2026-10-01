@@ -23,6 +23,37 @@ DEFAULTS = {
 }
 
 
+MIN_RAM_MB = 256
+
+
+def parse_port(text) -> int | None:
+    """Port TCP/UDP valide (1–65535), ou None."""
+    try:
+        port = int(str(text).strip())
+    except ValueError:
+        return None
+    return port if 1 <= port <= 65535 else None
+
+
+def parse_ram_mb(text) -> int | None:
+    """« 4 » ou « 2,5 » (Go) -> Mo ; None si ce n'est pas un nombre ou si
+    c'est trop peu pour lancer Java (-Xmx0M empêche tout démarrage)."""
+    try:
+        mb = int(float(str(text).strip().replace(",", ".")) * 1024)
+    except (ValueError, OverflowError):
+        return None
+    return mb if mb >= MIN_RAM_MB else None
+
+
+def parse_count(text, minimum: int = 1) -> int | None:
+    """Entier ≥ `minimum` (nombre de joueurs…), ou None."""
+    try:
+        n = int(str(text).strip())
+    except ValueError:
+        return None
+    return n if n >= minimum else None
+
+
 def load_properties(path: Path) -> dict:
     props = {}
     if not path.exists():

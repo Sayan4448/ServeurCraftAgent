@@ -142,16 +142,21 @@ def _generate_config(gdir: Path, java, timeout: float = 60) -> bool:
 
 
 def uninstall(server_dir: Path, loader: str = "") -> int:
-    n = 0
-    for sub in ("plugins", "mods"):
-        d = Path(server_dir) / sub
-        if d.exists():
-            for f in d.glob("*.jar"):
-                if f.name.lower().startswith(_OURS):
-                    f.unlink(missing_ok=True)
-                    n += 1
+    """Retire les jars du cross-play. Lève CrossplayError si un fichier est
+    verrouillé (serveur lancé) : rien d'autre n'est alors supprimé."""
+    jars = [f for sub in ("plugins", "mods")
+            for f in (Path(server_dir) / sub).glob("*.jar")
+            if f.name.lower().startswith(_OURS)]
+    for f in jars:
+        try:                          # ouvert en écriture = pas verrouillé
+            with open(f, "ab"):
+                pass
+        except OSError as e:
+            raise CrossplayError(f.name) from e
+    for f in jars:
+        f.unlink(missing_ok=True)
     shutil.rmtree(geyser_dir(server_dir), ignore_errors=True)
-    return n
+    return len(jars)
 
 
 # ------------------------------------------------------------ configuration
