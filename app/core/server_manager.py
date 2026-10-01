@@ -39,7 +39,7 @@ _QUIET_RESP = re.compile(
     r"players online|following entity data:|Can't get|"
     r"No entity was found|Unknown entity|"
     r"Gave |Can't give|Can't clear|"
-    r"Cleared|No items were found|Replaced|Could not|"
+    r"Cleared|Removed \d+ item|No items were found|Replaced|Could not|"
     r"Set the player's game mode|Set .*game mode|"
     r"That player isn't online|No player was found|"
     r"Nothing changed|That command does not exist|"
@@ -737,6 +737,25 @@ class ServerProcess:
         console (utilisé pour les commandes internes de l'app)."""
         self._quiet.append(time.time())
         return self.send(command)
+
+    def ask(self, command: str, pattern, timeout: float = 2.5):
+        """Envoie une commande interne et retourne la première ligne de
+        réponse qui correspond à `pattern` (regex compilée), ou None si le
+        serveur ne répond pas. Bloquant : à appeler depuis un thread."""
+        with self._lock:
+            seen = self.seq
+        if not self.send_quiet(command):
+            return None
+        end = time.time() + timeout
+        while time.time() < end:
+            lines, seen = self.lines_since(seen)
+            for line in lines:
+                if pattern.search(line):
+                    return line.lstrip(QUIET_MARK)
+            if not self.is_running():
+                return None
+            time.sleep(0.05)
+        return None
 
     def send(self, command: str) -> bool:
         if not self.is_running():

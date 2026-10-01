@@ -150,13 +150,23 @@ def render(items: dict, ender: bool, k: int, icons: item_icons.Icons,
     return img
 
 
-class InventoryView(tk.Canvas):
-    """Canvas qui affiche `render()` et gère survol / clic."""
+_DRAG_START = 5        # px avant qu'un clic devienne un glisser-déposer
 
-    def __init__(self, master, on_select=None):
+
+class InventoryView(tk.Canvas):
+    """Canvas qui affiche `render()` et gère survol, clic, clic droit et
+    glisser-déposer d'un objet d'une case à l'autre.
+
+    Callbacks : `on_select(slot)`, `on_move(src, dst)`,
+    `on_context(slot, x_écran, y_écran)`."""
+
+    def __init__(self, master, on_select=None, on_move=None,
+                 on_context=None):
         super().__init__(master, highlightthickness=0, bd=0,
                          bg=theme.c(theme.PANEL_2))
         self.on_select = on_select
+        self.on_move = on_move
+        self.on_context = on_context
         self.items: dict = {}
         self.ender = False
         self.title = ""
@@ -168,10 +178,17 @@ class InventoryView(tk.Canvas):
         self._origin = (0, 0)
         self._photo = None
         self._hover = None
+        self._press = None            # (slot, x, y) du bouton enfoncé
+        self._dragging = False
+        self._ghost = None            # PhotoImage de l'objet glissé
+        self._veil = None             # PhotoImage du voile de survol
         self.bind("<Configure>", lambda _e: self.redraw())
         self.bind("<Motion>", self._motion)
-        self.bind("<Leave>", lambda _e: self._tooltip(None))
-        self.bind("<Button-1>", self._click)
+        self.bind("<Leave>", self._leave)
+        self.bind("<ButtonPress-1>", self._on_press)
+        self.bind("<B1-Motion>", self._on_drag)
+        self.bind("<ButtonRelease-1>", self._on_release)
+        self.bind("<Button-3>", self._on_right_click)
 
     # ------------------------------------------------------------ données
     def set(self, items: dict, ender: bool, title: str = "",
@@ -217,25 +234,106 @@ class InventoryView(tk.Canvas):
         self._origin = (ox, oy)
         self.create_image(ox, oy, image=self._photo, anchor="nw")
         self._hover = None
+        self._press, self._dragging, self._ghost = None, False, None
+
+    def _slots(self) -> dict:
+        return ENDER_SLOTS if self.ender else INV_SLOTS
 
     def _slot_at(self, ex, ey):
         k = self._k
         gx, gy = (ex - self._origin[0]) / k, (ey - self._origin[1]) / k
-        slots = ENDER_SLOTS if self.ender else INV_SLOTS
-        for s, (x, y) in slots.items():
+        for s, (x, y) in self._slots().items():
             if x - 1 <= gx < x + 17 and y - 1 <= gy < y + 17:
                 return s
         return None
 
-    def _click(self, e):
-        s = self._slot_at(e.x, e.y)
-        if s is not None and self.on_select:
-            self.on_select(s)
+    def _slot_box(self, slot):
+        """Rectangle (canvas) de la zone 16×16 d'un slot."""
+        x, y = self._slots()[slot]
+        k, (ox, oy) = self._k, self._origin
+        return (ox + x * k, oy + y * k, ox + (x + 16) * k, oy + (y + 16) * k)
+
+    def _highlight(self, slot, tag: str) -> None:
+        """Voile clair sur une case, comme au survol dans le jeu."""
+        self.delete(tag)
+        if slot is None:
+            return
+        size = 16 * self._k
+        if self._veil is None or self._veil.width() != size:
+            self._veil = ImageTk.PhotoImage(
+                Image.new("RGBA", (size, size), (255, 255, 255, 110)))
+        x0, y0, _x1, _y1 = self._slot_box(slot)
+        self.create_image(x0, y0, image=self._veil, anchor="nw", tags=tag)
+        self.tag_raise("ghost")
+
+    def _leave(self, _e=None):
+        self._tooltip(None)
+        if not self._dragging:
+            self._highlight(None, "hover")
+            self._hover = None
 
     def _motion(self, e):
         s = self._slot_at(e.x, e.y)
+        if s != self._hover:
+            self._hover = s
+            self._highlight(s, "hover")
         it = self.items.get(s) if s is not None else None
+        self.configure(cursor="hand2" if it else "")
         self._tooltip(it, e.x, e.y)
+
+    # ------------------------------------------------- clic / glisser-déposer
+    def _on_press(self, e):
+        self._press = (self._slot_at(e.x, e.y), e.x, e.y)
+        self._dragging = False
+
+    def _on_drag(self, e):
+        if not self._press:
+            return
+        src, x0, y0 = self._press
+        if not self._dragging:
+            if src is None or src not in self.items or not self.on_move or \
+                    abs(e.x - x0) + abs(e.y - y0) < _DRAG_START:
+                return
+            self._start_drag(src)
+        self.coords("ghost", e.x, e.y)
+        target = self._slot_at(e.x, e.y)
+        self._highlight(target if target != src else None, "hover")
+
+    def _start_drag(self, src):
+        self._dragging = True
+        self._tooltip(None)
+        self.configure(cursor="fleur")
+        x0, y0, x1, y1 = self._slot_box(src)
+        # la case de départ paraît vide pendant le déplacement
+        self.create_rectangle(x0, y0, x1, y1, outline="", tags="drag",
+                              fill="#%02x%02x%02x" % _SLOT)
+        self._ghost = ImageTk.PhotoImage(
+            self.icons(self._k).get(self.items[src]["id"]))
+        self.create_image(0, 0, image=self._ghost, anchor="center",
+                          tags=("drag", "ghost"))
+
+    def _on_release(self, e):
+        press, dragging = self._press, self._dragging
+        self._press, self._dragging, self._ghost = None, False, None
+        self.delete("drag")
+        self.configure(cursor="")
+        if not press:
+            return
+        src = press[0]
+        target = self._slot_at(e.x, e.y)
+        if dragging:
+            self._highlight(None, "hover")
+            self._hover = None
+            if target is not None and target != src and self.on_move:
+                self.on_move(src, target)
+        elif target is not None and target == src and self.on_select:
+            self.on_select(target)
+
+    def _on_right_click(self, e):
+        s = self._slot_at(e.x, e.y)
+        if s is not None and self.on_context:
+            self._tooltip(None)
+            self.on_context(s, e.x_root, e.y_root)
 
     def _tooltip(self, it, x=0, y=0):
         self.delete("tip")

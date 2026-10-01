@@ -2465,6 +2465,93 @@ _V11_PLAYIT = {
 for _lang, _vals in _V11_PLAYIT.items():
     STRINGS[_lang].update(_vals)
 
+# v1.30 — une entrée par clé, dans l'ordre de LANGS : (fr, en, ru, ja, es, de)
+_V130 = {
+    # fiche joueur : retirer / déplacer / tout supprimer
+    "pc_clear": ("Tout supprimer", "Delete all", "Удалить всё", "すべて削除",
+                 "Eliminar todo", "Alles löschen"),
+    "pc_clear_confirm": (
+        "Êtes-vous sûr de vouloir tout supprimer ?\n\nTout l'inventaire de {name} (armure et main gauche comprises) sera vidé. Cette action est irréversible.",
+        "Are you sure you want to delete everything?\n\n{name}'s whole inventory (armor and off-hand included) will be emptied. This cannot be undone.",
+        "Вы уверены, что хотите удалить всё?\n\nВесь инвентарь {name} (включая броню и вторую руку) будет очищен. Это действие необратимо.",
+        "本当にすべて削除しますか？\n\n{name} のインベントリ全体（防具・オフハンドを含む）が空になります。この操作は元に戻せません。",
+        "¿Seguro que quieres eliminarlo todo?\n\nSe vaciará todo el inventario de {name} (armadura y mano izquierda incluidas). Esta acción no se puede deshacer.",
+        "Wirklich alles löschen?\n\nDas gesamte Inventar von {name} (inklusive Rüstung und Zweithand) wird geleert. Das kann nicht rückgängig gemacht werden."),
+    "pc_clear_confirm_ender": (
+        "Êtes-vous sûr de vouloir tout supprimer ?\n\nTout l'Ender chest de {name} sera vidé. Cette action est irréversible.",
+        "Are you sure you want to delete everything?\n\n{name}'s whole Ender chest will be emptied. This cannot be undone.",
+        "Вы уверены, что хотите удалить всё?\n\nВесь эндер-сундук {name} будет очищен. Это действие необратимо.",
+        "本当にすべて削除しますか？\n\n{name} のエンダーチェスト全体が空になります。この操作は元に戻せません。",
+        "¿Seguro que quieres eliminarlo todo?\n\nSe vaciará todo el Ender chest de {name}. Esta acción no se puede deshacer.",
+        "Wirklich alles löschen?\n\nDie gesamte Endertruhe von {name} wird geleert. Das kann nicht rückgängig gemacht werden."),
+    "pc_cleared": ("✔ Tout a été supprimé.", "✔ Everything was deleted.",
+                   "✔ Всё удалено.", "✔ すべて削除しました。",
+                   "✔ Se ha eliminado todo.", "✔ Alles gelöscht."),
+    "pc_removed": ("✔ Objet retiré.", "✔ Item removed.", "✔ Предмет убран.",
+                   "✔ アイテムを削除しました。", "✔ Objeto retirado.",
+                   "✔ Gegenstand entfernt."),
+    "pc_moved": ("✔ Objet déplacé.", "✔ Item moved.", "✔ Предмет перемещён.",
+                 "✔ アイテムを移動しました。", "✔ Objeto movido.",
+                 "✔ Gegenstand verschoben."),
+    "pc_given": ("✔ {item} ×{n} donné.", "✔ Gave {item} ×{n}.",
+                 "✔ Выдано: {item} ×{n}.", "✔ {item} ×{n} を付与しました。",
+                 "✔ {item} ×{n} entregado.", "✔ {item} ×{n} gegeben."),
+    "pc_working": ("Envoi au serveur…", "Sending to the server…",
+                   "Отправка на сервер…", "サーバーへ送信中…",
+                   "Enviando al servidor…", "Wird an den Server gesendet…"),
+    "pc_wait": ("Chargement en cours — réessaie dans un instant.",
+                "Still loading — try again in a moment.",
+                "Идёт загрузка — повторите через мгновение.",
+                "読み込み中です。少し待ってからもう一度お試しください。",
+                "Cargando — vuelve a intentarlo en un momento.",
+                "Wird noch geladen — gleich noch einmal versuchen."),
+    "pc_empty_slot": ("Cette case est vide.", "This slot is empty.",
+                      "Этот слот пуст.", "このスロットは空です。",
+                      "Esta casilla está vacía.", "Dieser Slot ist leer."),
+    "pc_no_answer": (
+        "Le serveur n'a pas répondu : rien n'indique que le changement a été appliqué (voir la console).",
+        "The server did not answer: nothing confirms the change was applied (check the console).",
+        "Сервер не ответил: нет подтверждения, что изменение применено (см. консоль).",
+        "サーバーから応答がありません。変更が適用されたか確認できません（コンソールを確認）。",
+        "El servidor no respondió: nada confirma que el cambio se aplicó (mira la consola).",
+        "Der Server hat nicht geantwortet: nichts bestätigt die Änderung (siehe Konsole)."),
+    "pc_refused": ("Le serveur a refusé : {msg}", "The server refused: {msg}",
+                   "Сервер отказал: {msg}", "サーバーが拒否しました：{msg}",
+                   "El servidor lo rechazó: {msg}",
+                   "Der Server hat abgelehnt: {msg}"),
+    "pc_stale": (
+        "Lecture en direct impossible : l'inventaire affiché est le dernier enregistré par le serveur et peut dater de quelques minutes.",
+        "Live read failed: the inventory shown is the last one saved by the server and may be a few minutes old.",
+        "Не удалось прочитать данные в реальном времени: показан последний сохранённый сервером инвентарь, он может быть устаревшим.",
+        "ライブ読み取りに失敗しました。表示中のインベントリはサーバーが最後に保存したもので、数分前の状態かもしれません。",
+        "No se pudo leer en directo: el inventario mostrado es el último guardado por el servidor y puede tener unos minutos.",
+        "Live-Lesen fehlgeschlagen: angezeigt wird das zuletzt vom Server gespeicherte Inventar, es kann einige Minuten alt sein."),
+    "pc_move_old": (
+        "Déplacer un objet chez un joueur connecté demande Minecraft 1.17 ou plus récent (joueur hors ligne : toutes les versions).",
+        "Moving an item for an online player needs Minecraft 1.17 or newer (offline player: any version).",
+        "Перемещение предмета у игрока в сети требует Minecraft 1.17+ (не в сети — любая версия).",
+        "オンラインのプレイヤーのアイテム移動には Minecraft 1.17 以降が必要です（オフラインなら全バージョン可）。",
+        "Mover un objeto de un jugador conectado requiere Minecraft 1.17 o posterior (desconectado: cualquier versión).",
+        "Das Verschieben bei einem Online-Spieler erfordert Minecraft 1.17 oder neuer (offline: jede Version)."),
+    "pc_move_full": (
+        "Échange impossible : aucune case libre (inventaire et Ender chest pleins).",
+        "Cannot swap: no free slot (inventory and Ender chest are full).",
+        "Обмен невозможен: нет свободного слота (инвентарь и эндер-сундук заполнены).",
+        "入れ替えできません：空きスロットがありません（インベントリとエンダーチェストが満杯）。",
+        "No se puede intercambiar: no hay casilla libre (inventario y Ender chest llenos).",
+        "Tausch nicht möglich: kein freier Slot (Inventar und Endertruhe voll)."),
+    "pc_hint_drag": (
+        "Glisse un objet pour le déplacer · clic droit ou Suppr pour le retirer.",
+        "Drag an item to move it · right-click or Del to remove it.",
+        "Перетащите предмет, чтобы переместить · ПКМ или Del — убрать.",
+        "ドラッグで移動 · 右クリックまたは Del で削除。",
+        "Arrastra un objeto para moverlo · clic derecho o Supr para retirarlo.",
+        "Gegenstand ziehen zum Verschieben · Rechtsklick oder Entf zum Entfernen."),
+}
+for _key, _vals in _V130.items():
+    for _lang, _text in zip(LANGS, _vals):
+        STRINGS[_lang][_key] = _text
+
 
 def get_lang() -> str:
     lang = load_settings().get("language", "fr")

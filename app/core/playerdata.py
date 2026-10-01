@@ -7,8 +7,8 @@ vie/faim/xp et inventaire complet sans que le joueur soit connecté.
   modifications à la prochaine sauvegarde.
 - Sinon → édition directe du .dat NBT (sûr, le fichier n'est pas en mémoire).
 """
-import gzip
 import json
+import re
 from pathlib import Path
 
 import nbtlib
@@ -100,6 +100,8 @@ def load(server_dir: Path, name: str):
 
 
 _ENTITY_DATA = "has the following entity data: "
+_ENTITY_ANSWER = re.compile(r"has the following entity data: |"
+                            r"No entity was found")
 
 
 def load_live(proc, target: str, timeout: float = 3.0):
@@ -107,24 +109,16 @@ def load_live(proc, target: str, timeout: float = 3.0):
     structure que le .dat. Le .dat d'un joueur connecté n'est réécrit qu'à
     la sauvegarde auto (~5 min) : il est périmé. Bloquant ; None si pas de
     réponse. `target` = pseudo ou sélecteur."""
-    import time
     if not (proc and proc.is_running() and proc.ready):
         return None
-    _lines, seen = proc.lines_since(0)
-    if not proc.send_quiet(f"data get entity {target}"):
+    ln = proc.ask(f"data get entity {target}", _ENTITY_ANSWER, timeout)
+    i = ln.find(_ENTITY_DATA) if ln else -1
+    if i < 0:                         # pas de réponse, ou entité absente
         return None
-    end = time.time() + timeout
-    while time.time() < end:
-        time.sleep(0.1)
-        lines, seen = proc.lines_since(seen)
-        for ln in lines:
-            i = ln.find(_ENTITY_DATA)
-            if i >= 0:
-                try:
-                    return nbtlib.parse_nbt(ln[i + len(_ENTITY_DATA):].strip())
-                except Exception as e:  # noqa: BLE001 — SNBT inattendu
-                    raise PlayerDataError(f"SNBT illisible : {e}")
-    return None
+    try:
+        return nbtlib.parse_nbt(ln[i + len(_ENTITY_DATA):].strip())
+    except Exception as e:  # noqa: BLE001 — SNBT inattendu
+        raise PlayerDataError(f"SNBT illisible : {e}")
 
 
 def save(server_dir: Path, name: str, data) -> Path:
@@ -280,12 +274,22 @@ def _count_type(data):
     return Int
 
 
+def _items(data, key: str):
+    """Liste NBT `key` prête à recevoir des items. Une liste vide relue
+    depuis le .dat n'a pas de type d'élément : nbtlib refuse d'y ajouter
+    un Compound — elle est alors recréée typée."""
+    lst = data.get(key)
+    if not isinstance(lst, List[Compound]):
+        lst = data[key] = List[Compound](lst or [])
+    return lst
+
+
 def set_item(data, slot: int, item_id: str, count: int = 1) -> None:
     """Pose un item dans un slot (écriture NBT hors-ligne)."""
     if not item_id.startswith("minecraft:"):
         item_id = "minecraft:" + item_id
     count = max(1, min(int(count), 99))
-    inv_list = data.setdefault("Inventory", List[Compound]())
+    inv_list = _items(data, "Inventory")
     ct = _count_type(data)
     for item in inv_list:
         if int(item.get("Slot", 0)) == slot:
@@ -321,6 +325,158 @@ def clear_inventory(data, ender: bool = False) -> None:
     if not ender and equip:
         for k in _EQUIP_SLOTS:
             equip.pop(k, None)
+
+
+# 1.21.5 (DataVersion 4325) : armure et main gauche dans `equipment`
+_EQUIPMENT_DATA_VERSION = 4325
+
+
+def _uses_equipment(data) -> bool:
+    if "equipment" in data:
+        return True
+    try:
+        return int(data.get("DataVersion", 0)) >= _EQUIPMENT_DATA_VERSION
+    except (TypeError, ValueError):
+        return False
+
+
+def _equip_key(data, slot: int, ender: bool):
+    """Clé `equipment` du slot s'il y est rangé dans ce fichier, sinon None."""
+    if ender or not _uses_equipment(data):
+        return None
+    return next((k for k, s in _EQUIP_SLOTS.items() if s == slot), None)
+
+
+def _pop(data, slot: int, ender: bool):
+    """Retire l'item du slot et le retourne (sans balise Slot), ou None."""
+    key = _equip_key(data, slot, ender)
+    if key:
+        return (data.get("equipment") or {}).pop(key, None)
+    lst = data.get("EnderItems" if ender else "Inventory") or []
+    for i, it in enumerate(lst):
+        if int(it.get("Slot", 0)) == slot:
+            item = Compound(it)
+            item.pop("Slot", None)
+            del lst[i]
+            return item
+    return None
+
+
+def _put(data, slot: int, item, ender: bool) -> None:
+    key = _equip_key(data, slot, ender)
+    if key:
+        data.setdefault("equipment", Compound())[key] = item
+        return
+    item = Compound(item)
+    item["Slot"] = Byte(slot)
+    _items(data, "EnderItems" if ender else "Inventory").append(item)
+
+
+def move_item(data, src: int, dst: int, ender: bool = False) -> bool:
+    """Déplace l'item de `src` vers `dst` (hors-ligne) ; si `dst` est
+    occupé, les deux items sont échangés. False s'il n'y a rien à déplacer."""
+    if src == dst:
+        return False
+    item = _pop(data, src, ender)
+    if item is None:
+        return False
+    other = _pop(data, dst, ender)
+    _put(data, dst, item, ender)
+    if other is not None:
+        _put(data, src, other, ender)
+    return True
+
+
+# ------------------------------------------------- commandes (joueur en ligne)
+
+# slot NBT -> nom de slot des commandes pour l'équipement
+_CMD_EQUIP = {SLOT_OFFHAND: "weapon.offhand", 100: "armor.feet",
+              101: "armor.legs", 102: "armor.chest", 103: "armor.head"}
+
+
+def mc_tuple(version) -> tuple:
+    """'1.21.4' -> (1, 21, 4) ; '26.1-pre2' -> (26, 1)."""
+    out = []
+    for part in str(version or "").split("."):
+        digits = ""
+        for ch in part:
+            if not ch.isdigit():
+                break
+            digits += ch
+        if not digits:
+            break
+        out.append(int(digits))
+    return tuple(out)
+
+
+def has_item_command(mc_version) -> bool:
+    """`/item` (avec copie « from entity ») existe depuis la 1.17 ; avant,
+    seul `/replaceitem` existe. Version inconnue : on suppose récente."""
+    v = mc_tuple(mc_version)
+    return not v or v >= (1, 17)
+
+
+def slot_name(slot: int, ender: bool = False) -> str:
+    """Nom du slot pour `/item replace entity`. Le numéro NBT n'est pas le
+    numéro de la commande : la barre d'accès (0–8) s'appelle `hotbar.N` et
+    le reste de l'inventaire (9–35) `inventory.0` à `inventory.26`."""
+    if ender:
+        if 0 <= slot <= 26:
+            return f"enderchest.{slot}"
+    elif 0 <= slot <= 8:
+        return f"hotbar.{slot}"
+    elif 9 <= slot <= 35:
+        return f"inventory.{slot - 9}"
+    elif slot in _CMD_EQUIP:
+        return _CMD_EQUIP[slot]
+    raise PlayerDataError(f"slot inconnu : {slot}")
+
+
+def remove_command(player: str, slot: int, ender: bool = False,
+                   mc_version="") -> str:
+    name = slot_name(slot, ender)
+    if has_item_command(mc_version):
+        return f"item replace entity {player} {name} with air"
+    if mc_tuple(mc_version) < (1, 13):            # 1.8 – 1.12
+        name = f"slot.{name}"
+    return f"replaceitem entity {player} {name} minecraft:air"
+
+
+def clear_commands(player: str, ender: bool = False, mc_version="") -> list:
+    """Vide l'inventaire (une commande) ou l'Ender chest (27 slots)."""
+    if not ender:
+        return [f"clear {player}"]
+    return [remove_command(player, s, True, mc_version) for s in range(27)]
+
+
+def move_commands(player: str, src: int, dst: int, ender: bool,
+                  inv: dict, ender_items: dict, mc_version="") -> list:
+    """Commandes qui déplacent l'item de `src` vers `dst` chez un joueur
+    connecté — objet copié tel quel (enchantements, nom, durabilité). Si
+    `dst` est occupé, les deux sont échangés en passant par une case libre.
+    `inv` / `ender_items` : cases occupées ({slot: …}, cf. `inventory()`).
+    Lève PlayerDataError si c'est impossible."""
+    from ..i18n import t
+    if not has_item_command(mc_version):
+        raise PlayerDataError(t("pc_move_old"))
+    here = ender_items if ender else inv
+    if src == dst or src not in here:
+        return []
+    a, b = slot_name(src, ender), slot_name(dst, ender)
+
+    def copy(to, frm):
+        return f"item replace entity {player} {to} from entity {player} {frm}"
+    if dst not in here:
+        return [copy(b, a), f"item replace entity {player} {a} with air"]
+    free = next((slot_name(s) for s in (*SLOT_MAIN, *SLOT_HOTBAR)
+                 if s not in inv and (ender or s not in (src, dst))), None) \
+        or next((slot_name(s, True) for s in range(27)
+                 if s not in ender_items
+                 and (not ender or s not in (src, dst))), None)
+    if free is None:
+        raise PlayerDataError(t("pc_move_full"))
+    return [copy(free, b), copy(b, a), copy(a, free),
+            f"item replace entity {player} {free} with air"]
 
 
 def give_item(data, item_id: str, count: int = 1) -> int:
