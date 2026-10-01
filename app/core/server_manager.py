@@ -421,6 +421,7 @@ class ServerProcess:
         self.hide_saves_until = 0.0  # masque les réponses save-* (backups)
         self.stop_requested = False  # arrêt voulu (stop/redémarrage)
         self._stop_thread = None
+        self._waiter_thread = None
         self.crashes = deque(maxlen=20)  # horodatages des crashs
         self.crash_prompt = False    # l'UI doit proposer un redémarrage
         self.history = deque(maxlen=HISTORY)  # (t, ram_mb, cpu, tps)
@@ -547,8 +548,9 @@ class ServerProcess:
         self.history.clear()
         threading.Thread(target=self._reader, args=(self.proc,),
                          daemon=True).start()
-        threading.Thread(target=self._waiter, args=(self.proc,),
-                         daemon=True).start()
+        self._waiter_thread = threading.Thread(
+            target=self._waiter, args=(self.proc,), daemon=True)
+        self._waiter_thread.start()
         if self.meta.get("playit_auto") and playit.linked():
             threading.Thread(target=self._playit_up, daemon=True).start()
 
@@ -655,10 +657,14 @@ class ServerProcess:
 
     def _waiter(self, proc) -> None:
         code = proc.wait()
+        # État figé tout de suite : pendant l'arrêt de Geyser (jusqu'à 8 s),
+        # un redémarrage relance start() qui remet ces drapeaux à zéro — le
+        # redémarrage était alors pris pour un crash.
+        crashed = not self.stop_requested
+        was_ready = self.ready
         self._stop_geyser()
         self.exit_code = code
         self.tracker.players.clear()
-        crashed = not self.stop_requested
         if crashed:
             discord.notify("crashed", self.name, code=code,
                            detail=self._tail())
@@ -671,7 +677,7 @@ class ServerProcess:
                 except Exception:
                     pass
         if crashed:
-            self._on_crash(code, was_ready=self.ready)
+            self._on_crash(code, was_ready=was_ready)
         playit.release(list(PROCESSES.values()))
 
     # ------------------------------------------------ crash
@@ -791,6 +797,7 @@ class ServerProcess:
 
     def restart(self) -> None:
         old = self.proc
+        waiter = self._waiter_thread
         self.stop("restart")
         self._starting = True
 
@@ -798,6 +805,10 @@ class ServerProcess:
             try:
                 if old:
                     old.wait()
+                # fin de l'ancien process entièrement traitée (Geyser,
+                # notifications) avant de relancer
+                if waiter and waiter is not threading.current_thread():
+                    waiter.join(timeout=30)
                 self.start()
             except Exception as e:  # noqa: BLE001
                 self.log(f"✖ Redémarrage impossible : {e}")

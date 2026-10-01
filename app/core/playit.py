@@ -350,7 +350,8 @@ def stop_agent() -> None:
 
 
 def release(processes) -> None:
-    """Arrête l'agent si plus aucun serveur Playit-auto ne tourne."""
-    if not any(p.is_running() and p.meta.get("playit_auto")
-               for p in processes):
+    """Arrête l'agent si plus aucun serveur Playit-auto ne tourne (un
+    serveur en cours de redémarrage compte comme lancé)."""
+    if not any((p.is_running() or getattr(p, "_starting", False))
+               and p.meta.get("playit_auto") for p in processes):
         stop_agent()
