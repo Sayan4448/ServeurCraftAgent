@@ -7,7 +7,9 @@ import time
 #   [12:34:56] [Server thread/INFO]: Steve joined the game
 #   [12:34:56] [Server thread/INFO]: Steve left the game / lost connection
 #   [12:34:56] [Server thread/INFO]: There are 2 of a max of 20 players online: Steve, Alex
-_NAME = r"([A-Za-z0-9_]{3,16})"
+# Pseudo Java (3–16 caractères) ou Bedrock via Floodgate : même pseudo
+# précédé d'un préfixe (« . » par défaut, parfois « * »).
+_NAME = r"([.*]?[A-Za-z0-9_]{3,16})"
 CHAT_RE = re.compile(rf"\]:\s*(?:\[Not Secure\]\s*)?<{_NAME}>\s*(.*)$")
 JOIN_RE = re.compile(rf"\]:\s*{_NAME} joined the game")
 LEAVE_RE = re.compile(rf"\]:\s*{_NAME} (?:left the game|lost connection)")
