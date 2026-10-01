@@ -73,9 +73,9 @@ def _post(url: str, payload: dict) -> str | None:
         if r.status_code == 429:          # limite de débit Discord
             try:
                 wait = float(r.json().get("retry_after", 1))
-            except ValueError:
-                wait = 1.0
-            time.sleep(min(wait, 10))
+            except (ValueError, TypeError, AttributeError):
+                wait = 1.0            # corps inattendu (proxy, HTML…)
+            time.sleep(max(0.0, min(wait, 10)))
             continue
         return None if r.ok else f"HTTP {r.status_code}"
     return "HTTP 429"
@@ -84,7 +84,10 @@ def _post(url: str, payload: dict) -> str | None:
 def _run() -> None:
     while True:
         url, payload = _q.get()
-        _post(url, payload)
+        try:
+            _post(url, payload)
+        except Exception:  # noqa: BLE001 — le thread d'envoi ne meurt pas
+            pass
 
 
 def _ensure_worker() -> None:
