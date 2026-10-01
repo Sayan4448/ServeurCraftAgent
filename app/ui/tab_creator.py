@@ -4,7 +4,7 @@ from tkinter import messagebox
 
 import customtkinter as ctk
 
-from ..config import load_settings
+from ..config import curseforge_key
 from ..core import downloader, mods as mods_mod, server_manager as sm
 from ..i18n import t
 from . import theme
@@ -240,18 +240,22 @@ class CreatorTab(ctk.CTkFrame):
         def work():
             try:
                 versions = downloader.get_versions(loader)
-            except Exception as e:
-                self._log(f"Erreur versions {loader} : {e}")
+            except Exception as e:  # noqa: BLE001
+                self._log(f"Erreur versions {loader} : "
+                          f"{mods_mod.explain(e)}")
                 versions = []
-            self._versions_cache[loader] = versions
-            try:
-                ui_call(self, self._set_versions, versions)
-            except RuntimeError:
-                pass  # fenêtre détruite pendant le chargement
+            if versions:              # un échec réseau n'est pas mémorisé
+                self._versions_cache[loader] = versions
+            ui_call(self, self._set_versions, versions, loader)
 
         threading.Thread(target=work, daemon=True).start()
 
-    def _set_versions(self, versions):
+    def _set_versions(self, versions, loader=None):
+        # Réponse d'un type de serveur qui n'est plus celui affiché (on a
+        # changé de type pendant le chargement) : elle écraserait la liste
+        # avec des versions qui n'existent pas pour le type choisi.
+        if loader and loader != _LABEL_TO_LOADER[self.loader_menu.get()]:
+            return
         if not versions:
             versions = [t("none_f")]
         self.version_menu.configure(values=versions)
@@ -281,11 +285,12 @@ class CreatorTab(ctk.CTkFrame):
     def _pack_loaded(self, pack, err):
         self.pack_btn.configure(state="normal", text=t("cre_from_pack"))
         if err:
-            messagebox.showerror("Modpack", t("cre_pack_err", e=err))
+            messagebox.showerror("Modpack", t("cre_pack_err", e=err),
+                                 parent=self.winfo_toplevel())
             return
-        if pack["format"] == "curseforge" and \
-                not load_settings().get("curseforge_api_key"):
-            messagebox.showwarning("Modpack", t("cre_pack_need_cf"))
+        if pack["format"] == "curseforge" and not curseforge_key():
+            messagebox.showwarning("Modpack", t("cre_pack_need_cf"),
+                                   parent=self.winfo_toplevel())
             return
         self._pack = pack
         loader, mc = pack.get("loader"), pack.get("mc_version")
@@ -340,6 +345,8 @@ class CreatorTab(ctk.CTkFrame):
             return
         try:
             port = int(self.port_entry.get())
+            if not 1 <= port <= 65535:
+                raise ValueError
         except ValueError:
             messagebox.showwarning(t("cre_bad_port_t"), t("cre_bad_port"))
             return
@@ -388,8 +395,7 @@ class CreatorTab(ctk.CTkFrame):
         if self._pack:
             options.update(modpack=self._pack,
                            loader_version=self._pack.get("loader_version"),
-                           cf_key=load_settings().get(
-                               "curseforge_api_key", ""))
+                           cf_key=curseforge_key())
 
         self._creating = True
         self.create_btn.configure(state="disabled", text=t("cre_creating"))
@@ -404,8 +410,8 @@ class CreatorTab(ctk.CTkFrame):
                     log=self._log,
                 )
                 ui_call(self, self._create_done, meta)
-            except Exception as e:
-                self._log(f"✖ Erreur : {e}")
+            except Exception as e:  # noqa: BLE001
+                self._log(f"✖ Erreur : {mods_mod.explain(e)}")
                 ui_call(self, self._create_failed)
 
         threading.Thread(target=work, daemon=True).start()
