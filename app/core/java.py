@@ -38,6 +38,8 @@ def _check_java(java_path: Path):
         proc = subprocess.run(
             [str(java_path), "-version"],
             capture_output=True, text=True, timeout=15,
+            # app packagée (sans console) : sinon une fenêtre noire clignote
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         return _parse_major(proc.stderr + proc.stdout)
     except (OSError, subprocess.SubprocessError):
