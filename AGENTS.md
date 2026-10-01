@@ -3,6 +3,8 @@
 ## Commandes
 - Lancer depuis les sources : `python main.py`
 - Vérif syntaxe : `python -m compileall -q app`
+- Tests : `pip install -r requirements-dev.txt` puis `python -m pytest`
+  (données isolées dans un dossier temporaire, aucun accès réseau ni Java)
 - Build MSI : `python setup.py bdist_msi` (fermer `ServerCraftAgent.exe` avant)
 - Install test (per-user, sans admin) : `msiexec /i dist\ServerCraftAgent-<ver>-win64.msi /qn`
 - Données de l'app installée : `%LOCALAPPDATA%\ServerCraftAgent` (servers/, data/, runtimes/, backups/)
