@@ -45,6 +45,24 @@ def test_unexpected_exit_is_a_crash(running_proc, monkeypatch):
     assert proc.exit_code == 1
 
 
+def test_send_is_single_line(running_proc):
+    """Pas d'injection : « kick x raison\\nop x » reste une seule commande."""
+    proc = running_proc()
+    assert proc.send("kick Steve spam\nop Steve\r\nstop")
+    assert proc.proc.sent == ["kick Steve spam op Steve stop\n"]
+    assert not proc.stop_requested
+
+
+def test_send_empty_or_stopped(running_proc):
+    proc = running_proc()
+    assert not proc.send("  \n ")
+    assert proc.proc.sent == []
+    assert proc.send("/stop")
+    assert proc.stop_requested
+    proc.proc.returncode = 0
+    assert not proc.send("list")
+
+
 def test_playit_agent_kept_during_restart(running_proc, monkeypatch):
     stopped = []
     monkeypatch.setattr(playit, "stop_agent", lambda: stopped.append(1))

@@ -98,7 +98,7 @@ class AutonomousModerator:
                 [{"role": "user", "content": user_msg}],
                 system, self.settings,
             )
-        except providers.ProviderError as e:
+        except Exception as e:  # noqa: BLE001 — provider, réseau, JSON
             if self.on_event:
                 self.on_event(f"Modération : erreur provider — {e}")
             return
@@ -111,11 +111,15 @@ class AutonomousModerator:
             return {"action": "ignore"}
         try:
             data = json.loads(m.group(0))
-            if data.get("action") in ("ignore", "warn", "kick", "ban"):
-                return data
         except json.JSONDecodeError:
-            pass
-        return {"action": "ignore"}
+            return {"action": "ignore"}
+        if not isinstance(data, dict) or data.get("action") not in (
+                "ignore", "warn", "kick", "ban"):
+            return {"action": "ignore"}
+        # texte libre du modèle : une seule ligne, longueur bornée
+        for key in ("reason", "reply"):
+            data[key] = " ".join(str(data.get(key) or "").split())[:200]
+        return data
 
     def _apply(self, player: str, decision: dict, original: str) -> None:
         action = decision.get("action", "ignore")

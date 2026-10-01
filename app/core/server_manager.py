@@ -741,7 +741,13 @@ class ServerProcess:
     def send(self, command: str) -> bool:
         if not self.is_running():
             return False
-        if command.strip().lstrip("/").lower() == "stop":
+        # Une commande = une ligne : un retour à la ligne dans un texte
+        # venu d'ailleurs (raison générée par l'IA, copier-coller) lancerait
+        # une deuxième commande dans la console.
+        command = " ".join(str(command).splitlines()).strip()
+        if not command:
+            return False
+        if command.lstrip("/").lower() == "stop":
             self.stop_requested = True
         try:
             with self._stdin_lock:    # scheduler, UI et IA écrivent ici
