@@ -2852,6 +2852,14 @@ _V130 = {
         "ドラッグで移動 · 右クリックまたは Del で削除。",
         "Arrastra un objeto para moverlo · clic derecho o Supr para retirarlo.",
         "Gegenstand ziehen zum Verschieben · Rechtsklick oder Entf zum Entfernen."),
+    # Playit : agent pas encore reconnu par l'API
+    "pl_err_agent_old": (
+        "Playit n'a pas encore reconnu l'agent de ce PC. Réessaie dans une minute ; si ça continue, délie puis relie le compte dans ⚙ Paramètres.",
+        "Playit has not recognised this PC's agent yet. Try again in a minute; if it keeps failing, unlink and link the account again in ⚙ Settings.",
+        "Playit ещё не распознал агент на этом ПК. Повторите через минуту; если не поможет, отвяжите и снова привяжите аккаунт в ⚙ Настройках.",
+        "Playit がこの PC のエージェントをまだ認識していません。1 分後にもう一度試してください。続く場合は ⚙ 設定でアカウントの連携を解除して再連携してください。",
+        "Playit aún no ha reconocido el agente de este PC. Inténtalo de nuevo en un minuto; si sigue fallando, desvincula y vuelve a vincular la cuenta en ⚙ Ajustes.",
+        "Playit hat den Agenten dieses PCs noch nicht erkannt. In einer Minute erneut versuchen; falls es weiter fehlschlägt, das Konto in ⚙ Einstellungen trennen und neu verbinden."),
 }
 for _key, _vals in _V130.items():
     for _lang, _text in zip(LANGS, _vals):

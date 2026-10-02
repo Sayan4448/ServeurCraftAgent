@@ -175,3 +175,38 @@ def test_whitelist_online_uses_commands(running_proc):
                               "whitelist on\n", "whitelist off\n"]
     assert banlist.list_whitelist(proc.path) == []    # le serveur écrit
     assert not banlist.whitelist_enabled(proc.path)
+
+
+# ------------------------------------------------------------------ Playit
+
+def test_playit_tunnels_created_once_agent_is_known(monkeypatch):
+    """L'agent est lancé avant la création, et un refus AgentVersionTooOld
+    (agent pas encore connecté) est retenté au lieu d'échouer."""
+    from app.core import playit
+    calls, state = [], {"refused": 1, "tunnels": []}
+
+    def fake_call(path, body=None, secret=None, timeout=15):
+        calls.append(path)
+        if path == "/v1/agents/rundata":
+            return {"agent_id": "a1", "tunnels": state["tunnels"],
+                    "pending": []}
+        assert path == "/tunnels/create" and "start" in calls
+        if state["refused"]:
+            state["refused"] -= 1
+            raise playit.PlayitError("AgentVersionTooOld")
+        assert body["origin"]["data"] == {
+            "agent_id": "a1", "local_ip": "127.0.0.1", "local_port": 25565}
+        state["tunnels"] = [{
+            "port_type": body["port_type"], "tunnel_type": body["tunnel_type"],
+            "display_address": "x.tun.ply.gg",
+            "agent_config": {"fields": [
+                {"name": "local_port", "value": "25565"}]}}]
+
+    monkeypatch.setattr(playit, "_call", fake_call)
+    monkeypatch.setattr(playit, "secret", lambda: "k")
+    monkeypatch.setattr(playit, "start_agent", lambda: calls.append("start"))
+    monkeypatch.setattr(playit.time, "sleep", lambda s: None)
+    found = playit.ensure_tunnels("survie", [("java", 25565)])
+    assert [(f["proto"], f["address"]) for f in found] == [
+        ("tcp", "x.tun.ply.gg")]
+    assert calls.count("/tunnels/create") == 2
