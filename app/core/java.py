@@ -91,9 +91,15 @@ def find_java(lo: int | None = None, hi: int | None = None):
 
 
 def pinned_java_range(mc_version: str) -> tuple:
-    """Java accepté pour un loader moddé de version imposée (modpack) : les
-    anciens Fabric/Forge/NeoForge ne lisent pas les classes des Java récents."""
+    """Java accepté pour une ancienne version ou un loader moddé de version
+    imposée (modpack) : les anciens Paper / Fabric / Forge / NeoForge ne
+    tournent pas sous un Java récent (Paper 1.16.5 refuse Java 17+, Forge
+    ≤ 1.16.5 plante au-delà de Java 8–15)."""
     need = required_java_major(mc_version)
+    if need <= 8:
+        return 8, 8
+    if need == 16:
+        return 16, 17
     return need, max(need, 21)
 
 
@@ -125,17 +131,19 @@ def required_java_major(mc_version: str) -> int:
 def ensure_java(mc_version: str = "1.21", log=print,
                 pinned: bool = False) -> Path:
     """Retourne un java compatible, en téléchargeant un JRE Temurin si besoin.
-    `pinned` : loader moddé de version imposée → Java borné (pinned_java_range)."""
-    if pinned:
+    Java borné (pinned_java_range) pour un loader moddé de version imposée
+    (`pinned`) et pour toutes les versions d'avant Java 21."""
+    need = required_java_major(mc_version)
+    if pinned or need < 21:
         lo, hi = pinned_java_range(mc_version)
         found, major = find_java(lo, hi)
         if found:
             log(f"Java détecté : {found} (version {major})")
             return found
-        log(t("java_pinned_dl", lo=lo, hi=hi, target=lo))
-        return download_jre(lo, log=log)
+        target = 17 if lo == 16 else lo      # pas de JRE Temurin 16
+        log(t("java_pinned_dl", lo=lo, hi=hi, target=target))
+        return download_jre(target, log=log)
     found, major = find_java()
-    need = required_java_major(mc_version)
     if found and major >= need:
         log(f"Java détecté : {found} (version {major})")
         return found
@@ -143,8 +151,7 @@ def ensure_java(mc_version: str = "1.21", log=print,
         log(f"Java {major} trouvé mais Minecraft {mc_version} requiert Java {need}+. Téléchargement d'un JRE…")
     else:
         log("Aucun Java trouvé. Téléchargement d'un JRE Temurin…")
-    target = 21 if need <= 21 else need
-    return download_jre(target, log=log)
+    return download_jre(need, log=log)
 
 
 def download_jre(major: int = 21, progress_cb=None, log=print) -> Path:

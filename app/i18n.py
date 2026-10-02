@@ -1818,7 +1818,7 @@ _V8_PACK = {
         "mpc_log_install": "— Modpack « {name} » : installation des mods serveur —",
         "mpc_loader_ver": "Version du loader imposée par le modpack : {loader} {ver}",
         "mpc_pin_fallback": "⚠ Version {ver} du loader introuvable : utilisation de la plus récente.",
-        "java_pinned_dl": "Loader du modpack : Java {lo} à {hi} requis (les Java plus récents le font planter). Téléchargement d'un JRE {target}…",
+        "java_pinned_dl": "Cette version demande Java {lo} à {hi} (un Java plus récent la fait planter). Téléchargement d'un JRE {target}…",
     },
     "en": {
         "cre_from_pack": "📦 From a modpack…",
@@ -1831,7 +1831,7 @@ _V8_PACK = {
         "mpc_log_install": "— Modpack “{name}”: installing server mods —",
         "mpc_loader_ver": "Loader version required by the modpack: {loader} {ver}",
         "mpc_pin_fallback": "⚠ Loader version {ver} not found: using the latest one.",
-        "java_pinned_dl": "Modpack loader: Java {lo} to {hi} required (newer Java versions crash it). Downloading a JRE {target}…",
+        "java_pinned_dl": "This version needs Java {lo} to {hi} (a newer Java crashes it). Downloading a JRE {target}…",
     },
     "ru": {
         "cre_from_pack": "📦 Из сборки…",
@@ -1844,7 +1844,7 @@ _V8_PACK = {
         "mpc_log_install": "— Сборка «{name}»: установка серверных модов —",
         "mpc_loader_ver": "Версия загрузчика из сборки: {loader} {ver}",
         "mpc_pin_fallback": "⚠ Версия загрузчика {ver} не найдена: используется последняя.",
-        "java_pinned_dl": "Загрузчик сборки: нужна Java от {lo} до {hi} (на более новых он падает). Загрузка JRE {target}…",
+        "java_pinned_dl": "Этой версии нужна Java от {lo} до {hi} (на более новой она падает). Загрузка JRE {target}…",
     },
     "ja": {
         "cre_from_pack": "📦 MODパックから…",
@@ -1857,7 +1857,7 @@ _V8_PACK = {
         "mpc_log_install": "— MODパック「{name}」: サーバーMODを導入中 —",
         "mpc_loader_ver": "MODパック指定のローダー: {loader} {ver}",
         "mpc_pin_fallback": "⚠ ローダー {ver} が見つかりません：最新版を使用します。",
-        "java_pinned_dl": "MODパックのローダー: Java {lo}〜{hi} が必要です（新しいJavaではクラッシュします）。JRE {target} をダウンロード中…",
+        "java_pinned_dl": "このバージョンには Java {lo}〜{hi} が必要です（新しい Java ではクラッシュします）。JRE {target} をダウンロード中…",
     },
     "es": {
         "cre_from_pack": "📦 Desde un modpack…",
@@ -1870,7 +1870,7 @@ _V8_PACK = {
         "mpc_log_install": "— Modpack «{name}»: instalando mods de servidor —",
         "mpc_loader_ver": "Versión del loader exigida por el modpack: {loader} {ver}",
         "mpc_pin_fallback": "⚠ Versión {ver} del loader no encontrada: se usa la más reciente.",
-        "java_pinned_dl": "Loader del modpack: requiere Java {lo} a {hi} (con Java más recientes se bloquea). Descargando un JRE {target}…",
+        "java_pinned_dl": "Esta versión requiere Java {lo} a {hi} (con un Java más reciente se bloquea). Descargando un JRE {target}…",
     },
     "de": {
         "cre_from_pack": "📦 Aus einem Modpack…",
@@ -1883,7 +1883,7 @@ _V8_PACK = {
         "mpc_log_install": "— Modpack „{name}“: Server-Mods werden installiert —",
         "mpc_loader_ver": "Vom Modpack vorgegebene Loader-Version: {loader} {ver}",
         "mpc_pin_fallback": "⚠ Loader-Version {ver} nicht gefunden: die neueste wird verwendet.",
-        "java_pinned_dl": "Modpack-Loader: Java {lo} bis {hi} erforderlich (neuere Java-Versionen bringen ihn zum Absturz). JRE {target} wird heruntergeladen…",
+        "java_pinned_dl": "Diese Version benötigt Java {lo} bis {hi} (mit neuerem Java stürzt sie ab). JRE {target} wird heruntergeladen…",
     },
 }
 for _lang, _vals in _V8_PACK.items():
@@ -2860,6 +2860,21 @@ _V130 = {
         "Playit がこの PC のエージェントをまだ認識していません。1 分後にもう一度試してください。続く場合は ⚙ 設定でアカウントの連携を解除して再連携してください。",
         "Playit aún no ha reconocido el agente de este PC. Inténtalo de nuevo en un minuto; si sigue fallando, desvincula y vuelve a vincular la cuenta en ⚙ Ajustes.",
         "Playit hat den Agenten dieses PCs noch nicht erkannt. In einer Minute erneut versuchen; falls es weiter fehlschlägt, das Konto in ⚙ Einstellungen trennen und neu verbinden."),
+    # cross-play : traduction de version par ViaProxy
+    "cp_proxy_start": (
+        "── Cross-play : traduction de version pour Minecraft {ver} (ViaProxy)… ──",
+        "── Cross-play: version translation for Minecraft {ver} (ViaProxy)… ──",
+        "── Кросс-плей: перевод версии для Minecraft {ver} (ViaProxy)… ──",
+        "── クロスプレイ：Minecraft {ver} 用のバージョン変換（ViaProxy）… ──",
+        "── Cross-play: traducción de versión para Minecraft {ver} (ViaProxy)… ──",
+        "── Cross-Play: Versionsübersetzung für Minecraft {ver} (ViaProxy)… ──"),
+    "cp_proxy_premium": (
+        "  ⚠ Sur ce serveur, les joueurs Bedrock n'entrent qu'avec les comptes « Crack uniquement » ou « Les deux » (⚙ Config) : en « Premium », le serveur refuse leur connexion.",
+        "  ⚠ On this server, Bedrock players can only join when accounts are set to “Cracked only” or “Both” (⚙ Config): in “Premium” the server rejects them.",
+        "  ⚠ На этом сервере игроки Bedrock входят только в режимах аккаунтов «Только пиратка» или «Оба» (⚙ Конфиг): в режиме «Премиум» сервер их отклоняет.",
+        "  ⚠ このサーバーでは、アカウント設定が「クラックのみ」または「両方」のときだけ Bedrock プレイヤーが参加できます（⚙ 設定）。「プレミアム」ではサーバーが接続を拒否します。",
+        "  ⚠ En este servidor, los jugadores Bedrock solo entran con las cuentas en «Solo crack» o «Ambos» (⚙ Config): en «Premium» el servidor los rechaza.",
+        "  ⚠ Auf diesem Server können Bedrock-Spieler nur mit der Kontoeinstellung „Nur Cracked“ oder „Beide“ beitreten (⚙ Konfig): bei „Premium“ lehnt der Server sie ab."),
     # mods : compatibilité et dépendances
     "mod_err_noversion": (
         "{name} : aucune version pour {loader} {mc}.",
@@ -2882,6 +2897,13 @@ _V130 = {
         "{name} はインストールされませんでした：必須の依存関係が見つかりません（{e}）",
         "{name} no instalado: falta una dependencia obligatoria ({e})",
         "{name} nicht installiert: eine erforderliche Abhängigkeit fehlt ({e})"),
+    "mod_err_java": (
+        "{name} : aucune version ne fonctionne avec Java {java}, celui des serveurs Minecraft {mc}.",
+        "{name}: no version works with Java {java}, the one Minecraft {mc} servers run on.",
+        "{name}: ни одна версия не работает с Java {java}, на которой работают серверы Minecraft {mc}.",
+        "{name}：Minecraft {mc} サーバーが使う Java {java} で動くバージョンがありません。",
+        "{name}: ninguna versión funciona con Java {java}, el de los servidores Minecraft {mc}.",
+        "{name}: keine Version läuft mit Java {java}, das Minecraft-{mc}-Server verwenden."),
     "mod_dep_added": (
         "  + dépendance installée : {name}",
         "  + dependency installed: {name}",

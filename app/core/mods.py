@@ -1,11 +1,15 @@
 """Mods & plugins : sources Modrinth + CurseForge, install, et Playit.gg."""
 import hashlib
 import json
+import re
+import struct
+import zipfile
 from pathlib import Path
 
 import requests
 
 from ..i18n import t
+from . import java as java_mod
 from .downloader import MOD_LOADERS, PLUGIN_LOADERS, download_file
 from .properties import load_properties, save_properties
 
@@ -151,14 +155,47 @@ def record_install(server_dir: Path, dest: Path, source: str,
     return removed
 
 
+def _by_preference(versions: list) -> list:
+    """Releases stables d'abord, puis bêtas, puis alphas — dans chaque
+    groupe, la plus récente en premier (la liste est déjà triée par date)."""
+    order = {"release": 0, "beta": 1, "alpha": 2}
+    return sorted(versions, key=lambda v: order.get(
+        v.get("version_type", "release"), 3))
+
+
 def _best_version(versions: list) -> dict:
     """Version la plus récente, en préférant une release stable à une
-    bêta / alpha plus récente (la liste est déjà triée par date)."""
-    for kind in ("release", "beta", "alpha"):
-        for v in versions:
-            if v.get("version_type", "release") == kind:
-                return v
-    return versions[0]
+    bêta / alpha plus récente."""
+    return _by_preference(versions)[0]
+
+
+def _plugin_java(jar: Path) -> int:
+    """Version de Java demandée par un plugin (d'après sa classe principale),
+    0 si elle est illisible. Un même plugin annonce souvent Minecraft 1.16 à
+    1.21 alors que ses versions récentes ne se chargent que sous Java 17."""
+    try:
+        with zipfile.ZipFile(jar) as z:
+            names = set(z.namelist())
+            for meta in ("plugin.yml", "paper-plugin.yml"):
+                if meta not in names:
+                    continue
+                m = re.search(r"(?m)^main:\s*['\"]?([\w.$]+)",
+                              z.read(meta).decode("utf-8", "replace"))
+                cls = m.group(1).replace(".", "/") + ".class" if m else ""
+                if cls in names:
+                    with z.open(cls) as f:
+                        return struct.unpack(">H", f.read(8)[6:8])[0] - 44
+    except (OSError, zipfile.BadZipFile, struct.error):
+        pass
+    return 0
+
+
+def _java_cap(mc_version: str) -> int:
+    """Java le plus récent sous lequel tourne un serveur de cette version
+    (0 = pas de limite) — voir java.pinned_java_range."""
+    if java_mod.required_java_major(mc_version) >= 21:
+        return 0
+    return java_mod.pinned_java_range(mc_version)[1]
 
 
 # ------------------------------------------------------------- helpers dossiers
@@ -317,17 +354,29 @@ def install_modrinth(project_slug: str, server_dir: Path, loader: str,
     if not versions:
         raise ModError(t("mod_err_noversion", name=project_slug,
                          loader=loader, mc=mc_version))
-    version = _best_version(versions)
-    jar = _pick_jar(version.get("files", []))
-    if not jar:
-        raise ModError(f"{project_slug} : aucun fichier .jar téléchargeable")
-    project = str(version.get("project_id") or project_slug)
+    project = str(versions[0].get("project_id") or project_slug)
     seen = _seen if _seen is not None else set()
-    if _seen is None and kind == "mod" and             _server_side(project) == "unsupported":
+    client_only = _seen is None and kind == "mod" and \
+        _server_side(project) == "unsupported"
+    if client_only:
         raise ModError(t("mod_err_client", name=project_slug))
     seen.add(project)
-    dest = target_dir(server_dir, loader, kind) / jar["filename"]
-    download_file(jar["url"], dest, progress_cb)
+    # plugin : la version la plus récente que le Java du serveur sait charger
+    cap = _java_cap(mc_version) if kind == "plugin" else 0
+    folder = target_dir(server_dir, loader, kind)
+    for version in _by_preference(versions)[:6 if cap else 1]:
+        jar = _pick_jar(version.get("files", []))
+        if not jar:
+            raise ModError(
+                f"{project_slug} : aucun fichier .jar téléchargeable")
+        dest = folder / jar["filename"]
+        download_file(jar["url"], dest, progress_cb)
+        if not cap or _plugin_java(dest) <= cap:
+            break
+        dest.unlink(missing_ok=True)
+    else:
+        raise ModError(t("mod_err_java", name=project_slug, mc=mc_version,
+                         java=cap))
     old = record_install(server_dir, dest, "modrinth", project)
     if replaced is not None:
         replaced += old

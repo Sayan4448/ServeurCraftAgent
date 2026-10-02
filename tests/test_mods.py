@@ -321,3 +321,38 @@ def test_no_version_from_another_loader(monkeypatch):
     monkeypatch.setattr(mods.requests, "get", fake_get)
     assert mods._modrinth_versions("viaversion", ["forge"], "1.20.1") == []
     assert len(asked) == 1 and "loaders" in asked[0]
+
+
+def _plugin_jar(path, class_major):
+    """Jar de plugin minimal dont la classe principale vise ce Java."""
+    import zipfile
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("plugin.yml", "name: X\nmain: a.b.Main\n")
+        z.writestr("a/b/Main.class", b"\xca\xfe\xba\xbe\x00\x00"
+                   + class_major.to_bytes(2, "big"))
+
+
+def test_plugin_built_for_newer_java_is_skipped(make_server, monkeypatch):
+    """Paper 1.16.5 tourne sous Java 8 : AuthMe 6 (Java 17) ne s'y charge
+    pas, la version précédente compatible est prise à la place."""
+    server = make_server(mc_version="1.16.5")
+    majors = {"https://x/6.0.1": 61, "https://x/5.6.0": 52}
+
+    def fake_download(url, dest, progress_cb=None):
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        _plugin_jar(dest, majors[url])
+    monkeypatch.setattr(mods, "download_file", fake_download)
+    monkeypatch.setattr(mods, "_identify_modrinth", lambda folder, known: {})
+    monkeypatch.setattr(mods, "_modrinth_versions",
+                        lambda *a: [_version("6.0.1"), _version("5.6.0")])
+    mods.install_modrinth("authmereloaded", server, "paper", "1.16.5",
+                          "plugin")
+    assert _jars(server) == ["AuthMe-5.6.0.jar"]
+    # aucune version chargeable : rien n'est laissé dans plugins/
+    monkeypatch.setattr(mods, "_modrinth_versions",
+                        lambda *a: [_version("6.0.1")])
+    (server / "plugins" / "AuthMe-5.6.0.jar").unlink()
+    with pytest.raises(mods.ModError):
+        mods.install_modrinth("authmereloaded", server, "paper", "1.16.5",
+                              "plugin")
+    assert _jars(server) == []
