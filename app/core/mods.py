@@ -238,11 +238,149 @@ def list_installed(server_dir: Path, loader: str) -> list:
         if d.exists():
             for f in sorted(d.glob("*.jar")):
                 out.append({"kind": kind, "name": f.name, "path": str(f)})
+            for f in sorted(d.glob("*.jar" + DISABLED)):
+                out.append({"kind": kind, "name": f.name[:-len(DISABLED)],
+                            "path": str(f), "disabled": True})
     return out
 
 
 def remove_installed(path: str) -> None:
     Path(path).unlink(missing_ok=True)
+
+
+# ------------------------------------------------ vérification des installés
+
+# Un fichier désactivé reste dans son dossier sous un nom que le serveur
+# ignore : rien n'est supprimé, on peut le réactiver.
+DISABLED = ".disabled"
+_JAR_MARKERS = {"fabric.mod.json": "fabric", "quilt.mod.json": "quilt",
+                "META-INF/mods.toml": "forge",
+                "META-INF/neoforge.mods.toml": "neoforge",
+                "plugin.yml": "plugin", "paper-plugin.yml": "plugin"}
+
+
+def set_enabled(path: str, enabled: bool) -> Path:
+    """Active / désactive un mod ou plugin en le renommant. Lève OSError si
+    le fichier est verrouillé par le serveur lancé."""
+    p = Path(path)
+    if enabled == (not p.name.endswith(DISABLED)):
+        return p
+    new = p.with_name(p.name[:-len(DISABLED)] if enabled
+                      else p.name + DISABLED)
+    p.replace(new)
+    return new
+
+
+def _jar_info(jar: Path) -> tuple:
+    """(loaders pour lesquels le jar est fait, True s'il se déclare 100 %
+    client) d'après ses métadonnées internes."""
+    kinds, client = set(), False
+    try:
+        with zipfile.ZipFile(jar) as z:
+            names = set(z.namelist())
+            kinds = {k for n, k in _JAR_MARKERS.items() if n in names}
+            if "fabric.mod.json" in names:
+                try:
+                    meta = json.loads(z.read("fabric.mod.json"))
+                    client = str(meta.get("environment", "")) == "client"
+                except ValueError:
+                    pass
+            for n in ("META-INF/neoforge.mods.toml", "META-INF/mods.toml"):
+                if n in names:
+                    toml = z.read(n).decode("utf-8", "replace")
+                    client = client or _toml_client_only(toml)
+    except (OSError, zipfile.BadZipFile, KeyError):
+        pass
+    return kinds, client
+
+
+def _toml_client_only(toml: str) -> bool:
+    """mods.toml : `clientSideOnly=true`, ou dépendance à minecraft / au
+    loader déclarée `side="CLIENT"`."""
+    flat = toml.replace(" ", "")
+    return "clientSideOnly=true" in flat or bool(re.search(
+        r'modId="(?:minecraft|forge|neoforge)"[^\[]*side="CLIENT"', flat,
+        re.I))
+
+
+def _accepted_kinds(loader: str, kind: str, mc_version: str) -> set:
+    if kind == "plugin":
+        return {"plugin"}
+    if loader == "neoforge":          # NeoForge 1.20.x lit encore mods.toml
+        return {"neoforge"} | ({"forge"} if mc_version.startswith("1.20")
+                               else set())
+    return {"fabric"} if loader == "fabric" else {"forge"}
+
+
+def _modrinth_known(paths: list) -> dict:
+    """{chemin: (version Modrinth, server_side du projet)} pour les jars que
+    Modrinth reconnaît à leur empreinte. Vide sans réseau."""
+    hashes = {}
+    for p in paths:
+        try:
+            hashes[_sha1(Path(p))] = p
+        except OSError:
+            pass
+    if not hashes:
+        return {}
+    try:
+        r = requests.post(f"{MODRINTH_API}/version_files",
+                          json={"hashes": list(hashes), "algorithm": "sha1"},
+                          headers=_UA, timeout=20)
+        r.raise_for_status()
+        versions = r.json()
+        ids = sorted({v["project_id"] for v in versions.values()})
+        sides = {}
+        for i in range(0, len(ids), 200):
+            r = requests.get(f"{MODRINTH_API}/projects",
+                             params={"ids": json.dumps(ids[i:i + 200])},
+                             headers=_UA, timeout=20)
+            r.raise_for_status()
+            sides.update({p["id"]: p.get("server_side", "")
+                          for p in r.json()})
+    except (requests.RequestException, ValueError, KeyError):
+        return {}
+    return {hashes[h]: (v, sides.get(v["project_id"], ""))
+            for h, v in versions.items() if h in hashes}
+
+
+def audit(server_dir: Path, loader: str, mc_version: str,
+          online: bool = True) -> list:
+    """Mods / plugins installés qui ne peuvent pas marcher sur ce serveur :
+    [{path, name, kind, reason, detail}], reason = 'client' (mod 100 %
+    client), 'loader' (fait pour un autre loader), 'java' (plugin compilé
+    pour un Java trop récent) ou 'version' (autre version de Minecraft).
+    `online=False` : métadonnées des jars seulement, aucun appel réseau."""
+    items = [it for it in list_installed(Path(server_dir), loader)
+             if not it.get("disabled")]
+    known = _modrinth_known([it["path"] for it in items]) if online else {}
+    cap = _java_cap(mc_version)
+    out = []
+    for it in items:
+        jar = Path(it["path"])
+        kinds, client = _jar_info(jar)
+        version, side = known.get(it["path"], (None, ""))
+        accepted = _accepted_kinds(loader, it["kind"], mc_version)
+        reason = detail = ""
+        if kinds and not kinds & accepted:
+            reason, detail = "loader", ", ".join(sorted(kinds))
+        elif it["kind"] == "mod" and (client or side == "unsupported"):
+            reason = "client"
+        elif it["kind"] == "plugin" and cap and _plugin_java(jar) > cap:
+            reason, detail = "java", str(_plugin_java(jar))
+        elif version and mc_version not in version.get("game_versions", []):
+            gv = version.get("game_versions") or ["?"]
+            reason = "version"
+            detail = gv[0] if len(gv) == 1 else f"{gv[0]} – {gv[-1]}"
+        if reason:
+            out.append({**it, "reason": reason, "detail": detail})
+    return out
+
+
+def audit_text(issue: dict, loader: str, mc_version: str) -> str:
+    """Explication d'un problème trouvé par `audit`."""
+    return t("mods_why_" + issue["reason"], detail=issue["detail"],
+             loader=loader, mc=mc_version, java=_java_cap(mc_version))
 
 
 # ------------------------------------------------------------------- Modrinth

@@ -552,6 +552,7 @@ class ServerProcess:
             owner = server_net.port_owner(port)
             raise ServerError(t("srv_port_busy", port=port,
                                 by=f" ({owner})" if owner else ""))
+        self._warn_bad_mods()
         self.exit_code = None
         self.ready = False           # passe à True au « Done (…) »
         self.stop_requested = False
@@ -575,6 +576,20 @@ class ServerProcess:
         self._waiter_thread.start()
         if self.meta.get("playit_auto") and playit.linked():
             threading.Thread(target=self._playit_up, daemon=True).start()
+
+    def _warn_bad_mods(self) -> None:
+        """Avant le lancement : signale dans la console les mods / plugins
+        qui ne peuvent pas marcher ici (mod client, autre loader, Java trop
+        récent) — la cause la plus fréquente d'un serveur qui ne démarre pas.
+        Lecture des jars seulement, aucun appel réseau."""
+        loader = self.meta.get("loader", "")
+        mc = self.meta.get("mc_version", "")
+        try:
+            for issue in mods_mod.audit(self.path, loader, mc, online=False):
+                self.log(t("mods_warn_start", name=issue["name"],
+                           why=mods_mod.audit_text(issue, loader, mc)))
+        except Exception:  # noqa: BLE001 — un jar illisible ne bloque rien
+            pass
 
     # ------------------------------------------------ tunnels Playit
     def _playit_up(self) -> None:

@@ -124,10 +124,17 @@ class ModsManager(ctk.CTkToplevel):
                                                   corner_radius=10)
         self.results_frame.grid(row=1, column=0, sticky="nsew")
 
-        ctk.CTkLabel(body, text=t("mods_installed"),
+        head = ctk.CTkFrame(body, fg_color="transparent")
+        head.grid(row=2, column=0, sticky="ew", pady=(8, 4))
+        ctk.CTkLabel(head, text=t("mods_installed"),
                      font=(theme.FONT, 13, "bold"),
-                     text_color=theme.TEXT).grid(
-            row=2, column=0, sticky="w", pady=(8, 4))
+                     text_color=theme.TEXT).pack(side="left")
+        self.check_btn = ctk.CTkButton(
+            head, width=0, height=26, fg_color=theme.PANEL_2,
+            hover_color=theme.HOVER, text_color=theme.TEXT,
+            command=self._check,
+            **theme.labelled("shield", t("mods_check"), "🩺", 14))
+        self.check_btn.pack(side="right")
         self.installed_frame = ctk.CTkScrollableFrame(body, fg_color=theme.PANEL,
                                                     corner_radius=10)
         self.installed_frame.grid(row=3, column=0, sticky="nsew")
@@ -367,22 +374,69 @@ class ModsManager(ctk.CTkToplevel):
                          text_color=theme.MUTED).pack(pady=10)
             return
         for it in items:
+            off = bool(it.get("disabled"))
             row = ctk.CTkFrame(self.installed_frame, fg_color=theme.PANEL_2,
                                corner_radius=8)
             row.pack(fill="x", padx=4, pady=3)
             badge = "MOD" if it["kind"] == "mod" else "PLUGIN"
-            color = theme.ACCENT if it["kind"] == "mod" else theme.ORANGE
+            color = theme.MUTED if off else (
+                theme.ACCENT if it["kind"] == "mod" else theme.ORANGE)
             ctk.CTkLabel(row, text=badge, width=52,
                          font=(theme.FONT, 9, "bold"), text_color=color,
                          anchor="w").pack(side="left", padx=(8, 0))
-            ctk.CTkLabel(row, text=it["name"], anchor="w",
-                         font=(theme.FONT, 11), text_color=theme.TEXT,
+            name = it["name"] + (f"   ({t('mods_disabled_tag')})" if off
+                                 else "")
+            ctk.CTkLabel(row, text=name, anchor="w",
+                         font=(theme.FONT, 11),
+                         text_color=theme.MUTED if off else theme.TEXT,
                          ).pack(side="left", padx=6, pady=6)
             ctk.CTkButton(
                 row, text=t("mods_del"), width=80, height=26,
                 fg_color=theme.RED, hover_color=theme.RED_HOVER,
                 command=lambda p=it["path"]: self._remove(p),
             ).pack(side="right", padx=8)
+            ctk.CTkButton(
+                row, text=t("mods_enable" if off else "mods_disable"),
+                width=90, height=26, fg_color=theme.PANEL,
+                hover_color=theme.HOVER, text_color=theme.TEXT,
+                command=lambda p=it["path"], on=off: self._toggle(p, on),
+            ).pack(side="right")
+
+    def _toggle(self, path, enabled: bool) -> bool:
+        """Active / désactive un fichier (renommage, rien n'est supprimé)."""
+        try:
+            mods_mod.set_enabled(path, enabled)
+        except OSError:               # jar verrouillé par le serveur lancé
+            self._set_status(t("mods_locked", name=Path(path).name))
+            return False
+        self._refresh_installed()
+        return True
+
+    # ------------------------------------------------------ vérification
+    def _check(self):
+        """Cherche les fichiers qui ne peuvent pas marcher sur ce serveur."""
+        self.check_btn.configure(state="disabled")
+        self._set_status(t("mods_checking"))
+        loader, mc = self.meta["loader"], self.meta["mc_version"]
+
+        def work():                   # thread : aucun appel Tk
+            try:
+                issues = mods_mod.audit(self.server_dir, loader, mc)
+                n = len(mods_mod.list_installed(self.server_dir, loader))
+                ui_call(self, self._checked, issues, n)
+            except Exception as e:  # noqa: BLE001
+                ui_call(self, self._checked, None, 0, mods_mod.explain(e))
+        threading.Thread(target=work, daemon=True).start()
+
+    def _checked(self, issues, n, error=""):
+        self.check_btn.configure(state="normal")
+        if issues is None:
+            self._set_status(t("mods_error", e=error))
+        elif not issues:
+            self._set_status(t("mods_check_ok", n=n))
+        else:
+            self._set_status("")
+            AuditDialog(self, issues)
 
     def _remove(self, path):
         name = Path(path).name
@@ -437,6 +491,58 @@ def pick_modpack(parent):
             parent=parent, title=t("mp_pick"),
             filetypes=[("Modpack", "*.mrpack *.zip"), ("Tous", "*.*")])
     return filedialog.askdirectory(parent=parent, title=t("mp_pick_folder"))
+
+
+class AuditDialog(ctk.CTkToplevel):
+    """Fichiers à problème trouvés par la vérification, à désactiver."""
+
+    def __init__(self, manager: ModsManager, issues: list):
+        super().__init__(manager)
+        self.manager = manager
+        self.title(t("mods_check_title", n=len(issues)))
+        self.geometry("640x460")
+        self.configure(fg_color=theme.BG)
+        self.transient(manager)
+        self.after(100, self.lift)
+        ctk.CTkLabel(self, text=t("mods_check_hint"), font=(theme.FONT, 11),
+                     text_color=theme.MUTED, wraplength=600,
+                     justify="left").pack(fill="x", padx=14, pady=(12, 6))
+        body = ctk.CTkScrollableFrame(self, fg_color=theme.PANEL,
+                                      corner_radius=10)
+        body.pack(fill="both", expand=True, padx=12, pady=4)
+        loader, mc = manager.meta["loader"], manager.meta["mc_version"]
+        self._rows = []
+        for issue in issues:
+            row = ctk.CTkFrame(body, fg_color=theme.PANEL_2, corner_radius=8)
+            row.pack(fill="x", padx=4, pady=3)
+            btn = ctk.CTkButton(row, text=t("mods_disable"), width=96,
+                                height=28, fg_color=theme.ORANGE,
+                                hover_color=theme.ORANGE_HOVER)
+            btn.configure(command=lambda i=issue, b=btn: self._disable(i, b))
+            btn.pack(side="right", padx=8, pady=6)
+            ctk.CTkLabel(row, text=issue["name"], anchor="w",
+                         font=(theme.FONT, 11, "bold"),
+                         text_color=theme.TEXT).pack(
+                fill="x", padx=10, pady=(6, 0))
+            ctk.CTkLabel(row, text=mods_mod.audit_text(issue, loader, mc),
+                         anchor="w", justify="left", wraplength=440,
+                         font=(theme.FONT, 10),
+                         text_color=theme.ORANGE).pack(
+                fill="x", padx=10, pady=(0, 6))
+            self._rows.append((issue, btn))
+        ctk.CTkButton(self, text=t("mods_disable_all"), height=34,
+                      fg_color=theme.ORANGE, hover_color=theme.ORANGE_HOVER,
+                      command=self._disable_all).pack(
+            fill="x", padx=12, pady=(6, 12))
+
+    def _disable(self, issue, btn):
+        if btn.cget("state") != "disabled" and \
+                self.manager._toggle(issue["path"], False):
+            btn.configure(state="disabled", text="✔", fg_color=theme.DISABLED)
+
+    def _disable_all(self):
+        for issue, btn in self._rows:
+            self._disable(issue, btn)
 
 
 class ModpackDialog(ctk.CTkToplevel):
