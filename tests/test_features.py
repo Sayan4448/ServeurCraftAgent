@@ -175,3 +175,136 @@ def test_whitelist_online_uses_commands(running_proc):
                               "whitelist on\n", "whitelist off\n"]
     assert banlist.list_whitelist(proc.path) == []    # le serveur écrit
     assert not banlist.whitelist_enabled(proc.path)
+
+
+# ------------------------------------------------------------------ Playit
+
+def test_playit_tunnels_created_once_agent_is_known(monkeypatch):
+    """L'agent est lancé avant la création, et un refus AgentVersionTooOld
+    (agent pas encore connecté) est retenté au lieu d'échouer."""
+    from app.core import playit
+    calls, state = [], {"refused": 1, "tunnels": []}
+
+    def fake_call(path, body=None, secret=None, timeout=15):
+        calls.append(path)
+        if path == "/v1/agents/rundata":
+            return {"agent_id": "a1", "tunnels": state["tunnels"],
+                    "pending": []}
+        assert path == "/tunnels/create" and "start" in calls
+        if state["refused"]:
+            state["refused"] -= 1
+            raise playit.PlayitError("AgentVersionTooOld")
+        assert body["origin"]["data"] == {
+            "agent_id": "a1", "local_ip": "127.0.0.1", "local_port": 25565}
+        state["tunnels"] = [{
+            "port_type": body["port_type"], "tunnel_type": body["tunnel_type"],
+            "display_address": "x.tun.ply.gg",
+            "agent_config": {"fields": [
+                {"name": "local_port", "value": "25565"}]}}]
+
+    monkeypatch.setattr(playit, "_call", fake_call)
+    monkeypatch.setattr(playit, "secret", lambda: "k")
+    monkeypatch.setattr(playit, "start_agent", lambda: calls.append("start"))
+    monkeypatch.setattr(playit.time, "sleep", lambda s: None)
+    found = playit.ensure_tunnels("survie", [("java", 25565)])
+    assert [(f["proto"], f["address"]) for f in found] == [
+        ("tcp", "x.tun.ply.gg")]
+    assert calls.count("/tunnels/create") == 2
+
+
+# ------------------------------------------------- anciennes versions, Java
+
+def test_old_versions_get_a_java_they_can_run_on(monkeypatch):
+    """Paper 1.16.5 refuse Java 17+, Forge ≤ 1.16.5 plante au-delà de Java 8 :
+    le premier Java trouvé (souvent le plus récent) ne convient pas."""
+    from app.core import java
+    assert java.pinned_java_range("1.12.2") == (8, 8)
+    assert java.pinned_java_range("1.16.5") == (8, 8)
+    assert java.pinned_java_range("1.17.1") == (16, 17)
+    assert java.pinned_java_range("1.20.1") == (17, 21)
+    asked = []
+    monkeypatch.setattr(java, "find_java",
+                        lambda lo=None, hi=None: asked.append((lo, hi))
+                        or ("java", lo or 25))
+    java.ensure_java("1.16.5", log=lambda m: None)
+    java.ensure_java("1.21.4", log=lambda m: None)
+    assert asked == [(8, 8), (None, None)]
+    # 1.17 : pas de JRE Temurin 16, c'est un 17 qui est téléchargé
+    got = []
+    monkeypatch.setattr(java, "find_java", lambda lo=None, hi=None:
+                        (None, None))
+    monkeypatch.setattr(java, "download_jre",
+                        lambda major, log=print: got.append(major) or "jre")
+    java.ensure_java("1.17.1", log=lambda m: None)
+    assert got == [17]
+
+
+# ---------------------------------------------------------------- cross-play
+
+def test_crossplay_goes_through_viaproxy_when_server_cannot_translate(
+        make_server):
+    """Geyser parle la dernière version de Java. Un serveur sans ViaVersion
+    (Forge, anciennes versions, mods Via retirés) répond « Client
+    incompatible » : il faut ViaProxy entre les deux."""
+    from app.core import crossplay
+    paper = make_server("p", loader="paper", mc_version="1.21.4")
+    (paper / "plugins").mkdir()
+    assert crossplay.needs_proxy(paper, "paper", "1.21.4")       # pas de Via
+    (paper / "plugins" / "ViaVersion-5.jar").write_bytes(b"x")
+    assert not crossplay.needs_proxy(paper, "paper", "1.21.4")
+    assert crossplay.needs_proxy(paper, "paper", "1.16.5")       # Java 8
+    assert crossplay.needs_proxy(paper, "forge", "1.20.1")
+    assert crossplay.needs_proxy(paper, "neoforge", "1.21.1")
+    fabric = make_server("f", loader="fabric", mc_version="1.21.4")
+    (fabric / "mods").mkdir()
+    (fabric / "mods" / "ViaFabric-0.4.jar").write_bytes(b"x")
+    assert not crossplay.needs_proxy(fabric, "fabric", "1.21.4")
+
+
+def test_crossplay_config_behind_proxy_uses_offline_auth(make_server):
+    """ViaProxy ne transmet pas l'identité Floodgate : derrière lui, Geyser
+    doit se connecter en mode hors-ligne, sur le port du proxy."""
+    from app.core import crossplay
+    server = make_server()
+    gdir = crossplay.geyser_dir(server)
+    gdir.mkdir()
+    (gdir / "config.yml").write_text(
+        "bedrock:\n  port: 19132\njava:\n  address: 127.0.0.1\n"
+        "  port: 25565\n  auth-type: online\n", encoding="utf-8")
+    (server / "plugins" / "floodgate").mkdir(parents=True)
+    (server / "plugins" / "floodgate" / "key.pem").write_bytes(b"k")
+    (server / "plugins" / "Floodgate-Spigot.jar").write_bytes(b"x")
+    assert crossplay.configure(server, 25565, "both") == "floodgate"
+    assert crossplay.configure(server, 40123, "both", proxy=True) == "offline"
+    text = (gdir / "config.yml").read_text("utf-8")
+    assert "port: 40123" in text and "port: 19132" in text
+    assert "auth-type: offline" in text
+
+
+def test_geyser_updated_only_when_a_newer_build_exists(make_server,
+                                                        monkeypatch):
+    import zipfile
+    from app.core import crossplay
+    server = make_server()
+    jar = crossplay.geyser_dir(server) / crossplay.GEYSER_JAR
+    jar.parent.mkdir()
+    with zipfile.ZipFile(jar, "w") as z:
+        z.writestr("git.properties", "git.build.number=1247\n")
+
+    class R:
+        def __init__(self, build):
+            self.build = build
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"build": self.build}
+    got = []
+    monkeypatch.setattr(crossplay, "download_file",
+                        lambda url, dest: got.append(dest))
+    monkeypatch.setattr(crossplay.requests, "get", lambda *a, **k: R(1247))
+    assert not crossplay.update_geyser(server, log=lambda m: None)
+    monkeypatch.setattr(crossplay.requests, "get", lambda *a, **k: R(1250))
+    assert crossplay.update_geyser(server, log=lambda m: None)
+    assert got == [jar]

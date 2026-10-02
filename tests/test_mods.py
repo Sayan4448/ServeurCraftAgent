@@ -256,3 +256,103 @@ def test_settings_file_survives_corruption(app_dirs):
     config.save_settings({"language": "en"})
     assert config.load_settings()["language"] == "en"
     assert [p.name for p in app_dirs["data"].iterdir()] == ["settings.json"]
+
+
+# ------------------------------------------- dépendances et compatibilité
+
+def _mod(number, project, deps=()):
+    v = _version(number, project=project)
+    v["files"][0]["filename"] = f"{project}-{number}.jar"
+    v["dependencies"] = [{"project_id": p, "dependency_type": kind}
+                         for p, kind in deps]
+    return v
+
+
+def test_required_dependencies_are_installed(make_server, monkeypatch,
+                                             offline_modrinth):
+    """ViaVersion sans ViaFabric = serveur Fabric qui ne démarre pas."""
+    server = make_server(loader="fabric")
+    catalog = {"viabackwards": [_mod("5", "VB", [("VV", "required"),
+                                                 ("OPT", "optional")])],
+               "VV": [_mod("5", "VV", [("VF", "required")])],
+               "VF": [_mod("0.4", "VF", [("VV", "required")])]}  # cycle
+    monkeypatch.setattr(mods, "_modrinth_versions",
+                        lambda project, *a: catalog.get(project, []))
+    monkeypatch.setattr(mods, "_server_side", lambda project: "required")
+    mods.install_modrinth("viabackwards", server, "fabric", "26.2", "mod")
+    assert _jars(server, "mods") == ["VB-5.jar", "VF-0.4.jar", "VV-5.jar"]
+    # déjà là : rien n'est retéléchargé
+    monkeypatch.setattr(mods, "download_file", lambda *a: 1 / 0)
+    mods._install_deps(["VV", "VF"], "x", server / "mods" / "VB-5.jar",
+                       server, "fabric", "26.2", "mod", set(), None)
+
+
+def test_mod_removed_when_a_required_dependency_is_missing(
+        make_server, monkeypatch, offline_modrinth):
+    server = make_server(loader="fabric")
+    catalog = {"easyauth": [_mod("3", "EA", [("FAPI", "required")])]}
+    monkeypatch.setattr(mods, "_modrinth_versions",
+                        lambda project, *a: catalog.get(project, []))
+    monkeypatch.setattr(mods, "_server_side", lambda project: "required")
+    with pytest.raises(mods.ModError):
+        mods.install_modrinth("easyauth", server, "fabric", "26.2", "mod")
+    assert _jars(server, "mods") == []
+
+
+def test_client_only_mod_is_refused(make_server, monkeypatch,
+                                    offline_modrinth):
+    server = make_server(loader="fabric")
+    monkeypatch.setattr(mods, "_modrinth_versions",
+                        lambda *a: [_mod("1", "SODIUM")])
+    monkeypatch.setattr(mods, "_server_side", lambda project: "unsupported")
+    with pytest.raises(mods.ModError):
+        mods.install_modrinth("sodium", server, "fabric", "26.2", "mod")
+    assert not (server / "mods").exists()
+
+
+def test_no_version_from_another_loader(monkeypatch):
+    """Pas de repli sans filtre de loader : un jar Paper/Fabric dans un
+    serveur Forge l'empêche de démarrer."""
+    asked = []
+
+    def fake_get(url, params=None, **kw):
+        asked.append(params)
+        return Resp(data=[])
+    monkeypatch.setattr(mods.requests, "get", fake_get)
+    assert mods._modrinth_versions("viaversion", ["forge"], "1.20.1") == []
+    assert len(asked) == 1 and "loaders" in asked[0]
+
+
+def _plugin_jar(path, class_major):
+    """Jar de plugin minimal dont la classe principale vise ce Java."""
+    import zipfile
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("plugin.yml", "name: X\nmain: a.b.Main\n")
+        z.writestr("a/b/Main.class", b"\xca\xfe\xba\xbe\x00\x00"
+                   + class_major.to_bytes(2, "big"))
+
+
+def test_plugin_built_for_newer_java_is_skipped(make_server, monkeypatch):
+    """Paper 1.16.5 tourne sous Java 8 : AuthMe 6 (Java 17) ne s'y charge
+    pas, la version précédente compatible est prise à la place."""
+    server = make_server(mc_version="1.16.5")
+    majors = {"https://x/6.0.1": 61, "https://x/5.6.0": 52}
+
+    def fake_download(url, dest, progress_cb=None):
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        _plugin_jar(dest, majors[url])
+    monkeypatch.setattr(mods, "download_file", fake_download)
+    monkeypatch.setattr(mods, "_identify_modrinth", lambda folder, known: {})
+    monkeypatch.setattr(mods, "_modrinth_versions",
+                        lambda *a: [_version("6.0.1"), _version("5.6.0")])
+    mods.install_modrinth("authmereloaded", server, "paper", "1.16.5",
+                          "plugin")
+    assert _jars(server) == ["AuthMe-5.6.0.jar"]
+    # aucune version chargeable : rien n'est laissé dans plugins/
+    monkeypatch.setattr(mods, "_modrinth_versions",
+                        lambda *a: [_version("6.0.1")])
+    (server / "plugins" / "AuthMe-5.6.0.jar").unlink()
+    with pytest.raises(mods.ModError):
+        mods.install_modrinth("authmereloaded", server, "paper", "1.16.5",
+                              "plugin")
+    assert _jars(server) == []

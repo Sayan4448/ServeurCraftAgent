@@ -19,9 +19,10 @@ from PIL import Image
 from ..core import item_icons
 from ..core import playerdata as pd
 from ..core import worldmap
-from ..i18n import t
+from ..i18n import get_lang, t
 from . import theme
 from .inventory_view import InventoryView
+from .item_catalog import ItemCatalog
 from .uithread import ui_call
 
 MINOTAR = "https://minotar.net/helm/{}/64.png"
@@ -35,27 +36,6 @@ _ANSWER = re.compile(r"Replaced|Removed \d+ item|No items were found|Gave |"
                      + _FAIL)
 _REFUSED = re.compile(_FAIL)
 _LOG_PREFIX = re.compile(r"^.*?\]:\s*(?:System chat:\s*)?")
-
-# petit catalogue pour le bouton « Donner » (id minecraft + joli nom)
-GIVE_ITEMS = [
-    "diamond", "diamond_sword", "diamond_pickaxe", "diamond_axe",
-    "diamond_shovel", "diamond_hoe", "netherite_sword", "netherite_pickaxe",
-    "iron_sword", "iron_pickaxe", "golden_apple", "enchanted_golden_apple",
-    "bow", "crossbow", "arrow", "trident", "shield", "totem_of_undying",
-    "elytra", "firework_rocket", "ender_pearl", "ender_eye", "compass",
-    "clock", "map", "fishing_rod", "shears", "flint_and_steel",
-    "torch", "lantern", "bread", "cooked_beef", "cooked_porkchop",
-    "golden_carrot", "cake", "pumpkin_pie", "cookie",
-    "oak_log", "spruce_log", "birch_log", "oak_planks", "stone",
-    "cobblestone", "stone_bricks", "bricks", "glass", "sand", "gravel",
-    "dirt", "grass_block", "oak_sapling", "bed", "chest", "crafting_table",
-    "furnace", "anvil", "enchanting_table", "bookshelf", "tnt",
-    "water_bucket", "lava_bucket", "bucket", "iron_block", "gold_block",
-    "diamond_block", "emerald_block", "obsidian", "crying_obsidian",
-    "beacon", "conduit", "nether_star", "dragon_egg", "experience_bottle",
-    "name_tag", "saddle", "lead", "minecart", "boat", "rail",
-    "spyglass", "amethyst_shard", "echo_shard", "recovery_compass",
-]
 
 _POS_RE = re.compile(r"\[(-?[\d.]+)d?,\s*(-?[\d.]+)d?,\s*(-?[\d.]+)d?\]")
 _POS_ANSWER = re.compile(r"entity data|No entity was found")
@@ -74,6 +54,9 @@ class PlayerCard(ctk.CTkToplevel):
         self._loading = False           # lecture des données en cours
         self._busy = False              # commandes en cours d'envoi
         self._note = ""                 # résultat de la dernière action
+        # (dossier des textures, {mod: dossier}, {id: nom}) une fois chargés
+        self.textures = None
+        self._catalog = None            # fenêtre « Donner »
 
         self.title(t("pc_title", name=name))
         self.geometry("1040x640")
@@ -302,31 +285,38 @@ class PlayerCard(ctk.CTkToplevel):
     def _load_textures(self):
         """Textures officielles de la version du serveur (téléchargées une
         seule fois) ; en attendant : celles d'une autre version ou des
-        pastilles."""
+        pastilles. Puis textures et noms des objets des mods du serveur."""
         version = str(self.proc.meta.get("mc_version", ""))
         cached = item_icons.best_cached(version)
         if cached:
             self.inv_view.set_textures(cached)
-        if item_icons.available(version):
-            return
-        self._tex_status = t("inv_tex_dl")
-        self.status.configure(text=self._tex_status)
+        need = not item_icons.available(version)
+        if need:
+            self._tex_status = t("inv_tex_dl")
+            self.status.configure(text=self._tex_status)
+        lang = get_lang()
 
-        def work():
-            try:
-                ui_call(self, self._textures_ready, item_icons.ensure(version))
-            except item_icons.TextureError as e:
-                ui_call(self, self._textures_ready, None, str(e))
+        def work():                   # thread : aucun appel Tk
+            root, err = cached, ""
+            if need:
+                try:
+                    root = item_icons.ensure(version)
+                except item_icons.TextureError as e:
+                    err = str(e)
+            mods = item_icons.mod_roots(self.dir)
+            roots = {**({"minecraft": root} if root else {}), **mods}
+            names = dict(item_icons.catalog(roots, lang))
+            ui_call(self, self._textures_ready, root, err, mods, names)
         threading.Thread(target=work, daemon=True).start()
 
-    def _textures_ready(self, root, err=""):
+    def _textures_ready(self, root, err, mods, names):
         if not self._alive:
             return
         self._tex_status = ""
-        if root:
-            self.inv_view.set_textures(root)
-            self._render_inv()
-        else:
+        self.textures = (root, mods, names)
+        self.inv_view.set_textures(root, mods, names)
+        self._render_inv()
+        if err:
             self._say(t("inv_tex_err", e=err[:80]), theme.ORANGE)
 
     # ------------------------------------------------------------- carte
@@ -552,102 +542,29 @@ class PlayerCard(ctk.CTkToplevel):
                 t("pc_cleared"))
 
     def _give_dialog(self):
+        """Ouvre (ou ramène devant) le catalogue d'objets."""
+        if self._catalog is not None and self._catalog.winfo_exists():
+            self._catalog.lift()
+        else:
+            self._catalog = ItemCatalog(self)
+
+    def give(self, item_id: str, count: int, title: str = "") -> bool:
+        """Donne `count` × `item_id` (id complet : `minecraft:stone`,
+        `create:wrench`…). False si une action est déjà en cours."""
         if not self._ready():
-            return
-        dlg = _GiveDialog(self)
-        self.wait_window(dlg)
-        if not dlg.result or not self._alive:
-            return
-        item, count = dlg.result
-        done = t("pc_given", item=pd.pretty_name(item), n=count)
+            return False
+        done = t("pc_given", item=title or pd.pretty_name(item_id), n=count)
         if pd.is_online(self.proc, self.name):
-            self._run_online(
-                [f"give {self.name} minecraft:{item} {count}"], done)
-            return
+            self._run_online([f"give {self.name} {item_id} {count}"], done)
+            return True
         if pd.load(self.dir, self.name) is None:   # jamais connecté
             import nbtlib
             pd.save(self.dir, self.name, nbtlib.File(nbtlib.Compound(
                 {"Inventory": nbtlib.List[nbtlib.Compound]()})))
         self._edit_offline(
             lambda data: (t("pc_full")
-                          if pd.give_item(data, item, count) < 0 else None),
+                          if pd.give_item(data, item_id, count) < 0
+                          else None),
             done)
+        return True
 
-
-class _GiveDialog(ctk.CTkToplevel):
-    """Choix d'un item (liste filtrable) + quantité."""
-
-    def __init__(self, master):
-        super().__init__(master)
-        self.result = None
-        self.title(t("pc_give"))
-        self.geometry("380x430")
-        self.configure(fg_color=theme.BG)
-        self.transient(master)
-        self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(2, weight=1)
-
-        self.q = ctk.CTkEntry(self, placeholder_text=t("pc_give_ph"),
-                              fg_color=theme.PANEL_2,
-                              border_color=theme.BORDER,
-                              text_color=theme.TEXT, height=32)
-        self.q.grid(row=0, column=0, columnspan=2, sticky="ew", padx=12,
-                    pady=(12, 4))
-        self.q.bind("<KeyRelease>", lambda _e: self._filter())
-        self.count = ctk.CTkEntry(self, width=70, height=32,
-                                  fg_color=theme.PANEL_2,
-                                  border_color=theme.BORDER,
-                                  text_color=theme.TEXT)
-        self.count.insert(0, "1")
-        self.count.grid(row=0, column=2, padx=(4, 12), pady=(12, 4))
-        self.list_f = ctk.CTkScrollableFrame(
-            self, fg_color=theme.PANEL,
-            scrollbar_button_color=theme.PANEL_2)
-        self.list_f.grid(row=2, column=0, columnspan=3, sticky="nsew",
-                         padx=12, pady=6)
-        ctk.CTkButton(self, text=t("pc_give"), height=36,
-                      font=(theme.FONT, 12, "bold"), fg_color=theme.GREEN,
-                      hover_color=theme.GREEN_HOVER,
-                      text_color=theme.ON_GREEN,
-                      command=self._ok).grid(row=3, column=0, columnspan=3,
-                                             sticky="ew", padx=12,
-                                             pady=(4, 12))
-        self._sel_item = None
-        self._rows = {}
-        self._filter()
-        self.q.focus()
-        self.grab_set()
-
-    def _filter(self):
-        q = self.q.get().strip().lower()
-        for w in self.list_f.winfo_children():
-            w.destroy()
-        self._rows = {}
-        for item in GIVE_ITEMS:
-            if q and q not in item:
-                continue
-            sel = self._sel_item == item
-            b = ctk.CTkButton(
-                self.list_f, text=pd.pretty_name(f"minecraft:{item}"),
-                anchor="w", font=(theme.FONT, 11), height=28,
-                fg_color=theme.ACCENT if sel else "transparent",
-                hover_color=theme.HOVER, text_color=theme.TEXT,
-                command=lambda i=item: self._pick(i))
-            b.pack(fill="x", pady=1)
-            self._rows[item] = b
-
-    def _pick(self, item):
-        self._sel_item = item
-        self._filter()
-
-    def _ok(self):
-        item = self._sel_item or self.q.get().strip().lower().replace(
-            " ", "_")
-        if not item:
-            return
-        try:
-            count = max(1, min(int(self.count.get()), 64))
-        except ValueError:
-            count = 1
-        self.result = (item, count)
-        self.destroy()

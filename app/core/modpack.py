@@ -22,6 +22,7 @@ from pathlib import Path, PurePosixPath
 import requests
 
 from .downloader import download_file
+from .mods import _toml_client_only
 
 MODRINTH = "https://api.modrinth.com/v2"
 CURSEFORGE = "https://api.curseforge.com/v1"
@@ -149,7 +150,9 @@ def _modrinth_sides(hashes: list) -> dict:
 
 
 def _jar_meta_side(data: bytes) -> str | None:
-    """'client' | 'server' | None d'après les métadonnées internes du jar."""
+    """'client' | 'server' d'après les métadonnées internes du jar, None si
+    elles ne tranchent pas (un mods.toml sans mention ne prouve pas que le
+    mod marche sur un serveur : la liste des mods client connus décide)."""
     try:
         import io
         with zipfile.ZipFile(io.BytesIO(data)) as z:
@@ -164,7 +167,7 @@ def _jar_meta_side(data: bytes) -> str | None:
                         "minecraft", {}).get("environment") or "").lower()
                     if env == "client":
                         return "client"
-                    if env in ("server", "*", ""):
+                    if env == "server":
                         return "server"
             if "META-INF/neoforge.mods.toml" in names or \
                     "META-INF/mods.toml" in names:
@@ -172,9 +175,8 @@ def _jar_meta_side(data: bytes) -> str | None:
                               if "META-INF/neoforge.mods.toml" in names
                               else "META-INF/mods.toml").decode(
                     "utf-8", "replace")
-                if 'clientSideOnly=true' in toml.replace(" ", ""):
+                if _toml_client_only(toml):
                     return "client"
-                return "server"
     except (zipfile.BadZipFile, OSError, KeyError):
         pass
     return None

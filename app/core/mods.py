@@ -1,13 +1,17 @@
 """Mods & plugins : sources Modrinth + CurseForge, install, et Playit.gg."""
 import hashlib
 import json
+import re
+import struct
+import zipfile
 from pathlib import Path
 
 import requests
 
 from ..i18n import t
+from . import java as java_mod
 from .downloader import MOD_LOADERS, PLUGIN_LOADERS, download_file
-from .properties import load_properties, save_properties, update_properties
+from .properties import load_properties, save_properties
 
 MODRINTH_API = "https://api.modrinth.com/v2"
 CURSEFORGE_API = "https://api.curseforge.com/v1"
@@ -25,8 +29,8 @@ VOICE_LABELS = {
 
 # Catégories Modrinth selon le loader (ordre = préférence).
 LOADER_MAP = {
-    "paper": ["paper", "bukkit"],
-    "purpur": ["purpur", "paper", "bukkit"],
+    "paper": ["paper", "spigot", "bukkit"],
+    "purpur": ["purpur", "paper", "spigot", "bukkit"],
     "fabric": ["fabric"],
     "forge": ["forge"],
     "neoforge": ["neoforge"],
@@ -151,14 +155,47 @@ def record_install(server_dir: Path, dest: Path, source: str,
     return removed
 
 
+def _by_preference(versions: list) -> list:
+    """Releases stables d'abord, puis bêtas, puis alphas — dans chaque
+    groupe, la plus récente en premier (la liste est déjà triée par date)."""
+    order = {"release": 0, "beta": 1, "alpha": 2}
+    return sorted(versions, key=lambda v: order.get(
+        v.get("version_type", "release"), 3))
+
+
 def _best_version(versions: list) -> dict:
     """Version la plus récente, en préférant une release stable à une
-    bêta / alpha plus récente (la liste est déjà triée par date)."""
-    for kind in ("release", "beta", "alpha"):
-        for v in versions:
-            if v.get("version_type", "release") == kind:
-                return v
-    return versions[0]
+    bêta / alpha plus récente."""
+    return _by_preference(versions)[0]
+
+
+def _plugin_java(jar: Path) -> int:
+    """Version de Java demandée par un plugin (d'après sa classe principale),
+    0 si elle est illisible. Un même plugin annonce souvent Minecraft 1.16 à
+    1.21 alors que ses versions récentes ne se chargent que sous Java 17."""
+    try:
+        with zipfile.ZipFile(jar) as z:
+            names = set(z.namelist())
+            for meta in ("plugin.yml", "paper-plugin.yml"):
+                if meta not in names:
+                    continue
+                m = re.search(r"(?m)^main:\s*['\"]?([\w.$]+)",
+                              z.read(meta).decode("utf-8", "replace"))
+                cls = m.group(1).replace(".", "/") + ".class" if m else ""
+                if cls in names:
+                    with z.open(cls) as f:
+                        return struct.unpack(">H", f.read(8)[6:8])[0] - 44
+    except (OSError, zipfile.BadZipFile, struct.error):
+        pass
+    return 0
+
+
+def _java_cap(mc_version: str) -> int:
+    """Java le plus récent sous lequel tourne un serveur de cette version
+    (0 = pas de limite) — voir java.pinned_java_range."""
+    if java_mod.required_java_major(mc_version) >= 21:
+        return 0
+    return java_mod.pinned_java_range(mc_version)[1]
 
 
 # ------------------------------------------------------------- helpers dossiers
@@ -201,11 +238,149 @@ def list_installed(server_dir: Path, loader: str) -> list:
         if d.exists():
             for f in sorted(d.glob("*.jar")):
                 out.append({"kind": kind, "name": f.name, "path": str(f)})
+            for f in sorted(d.glob("*.jar" + DISABLED)):
+                out.append({"kind": kind, "name": f.name[:-len(DISABLED)],
+                            "path": str(f), "disabled": True})
     return out
 
 
 def remove_installed(path: str) -> None:
     Path(path).unlink(missing_ok=True)
+
+
+# ------------------------------------------------ vérification des installés
+
+# Un fichier désactivé reste dans son dossier sous un nom que le serveur
+# ignore : rien n'est supprimé, on peut le réactiver.
+DISABLED = ".disabled"
+_JAR_MARKERS = {"fabric.mod.json": "fabric", "quilt.mod.json": "quilt",
+                "META-INF/mods.toml": "forge",
+                "META-INF/neoforge.mods.toml": "neoforge",
+                "plugin.yml": "plugin", "paper-plugin.yml": "plugin"}
+
+
+def set_enabled(path: str, enabled: bool) -> Path:
+    """Active / désactive un mod ou plugin en le renommant. Lève OSError si
+    le fichier est verrouillé par le serveur lancé."""
+    p = Path(path)
+    if enabled == (not p.name.endswith(DISABLED)):
+        return p
+    new = p.with_name(p.name[:-len(DISABLED)] if enabled
+                      else p.name + DISABLED)
+    p.replace(new)
+    return new
+
+
+def _jar_info(jar: Path) -> tuple:
+    """(loaders pour lesquels le jar est fait, True s'il se déclare 100 %
+    client) d'après ses métadonnées internes."""
+    kinds, client = set(), False
+    try:
+        with zipfile.ZipFile(jar) as z:
+            names = set(z.namelist())
+            kinds = {k for n, k in _JAR_MARKERS.items() if n in names}
+            if "fabric.mod.json" in names:
+                try:
+                    meta = json.loads(z.read("fabric.mod.json"))
+                    client = str(meta.get("environment", "")) == "client"
+                except ValueError:
+                    pass
+            for n in ("META-INF/neoforge.mods.toml", "META-INF/mods.toml"):
+                if n in names:
+                    toml = z.read(n).decode("utf-8", "replace")
+                    client = client or _toml_client_only(toml)
+    except (OSError, zipfile.BadZipFile, KeyError):
+        pass
+    return kinds, client
+
+
+def _toml_client_only(toml: str) -> bool:
+    """mods.toml : `clientSideOnly=true`, ou dépendance à minecraft / au
+    loader déclarée `side="CLIENT"`."""
+    flat = toml.replace(" ", "")
+    return "clientSideOnly=true" in flat or bool(re.search(
+        r'modId="(?:minecraft|forge|neoforge)"[^\[]*side="CLIENT"', flat,
+        re.I))
+
+
+def _accepted_kinds(loader: str, kind: str, mc_version: str) -> set:
+    if kind == "plugin":
+        return {"plugin"}
+    if loader == "neoforge":          # NeoForge 1.20.x lit encore mods.toml
+        return {"neoforge"} | ({"forge"} if mc_version.startswith("1.20")
+                               else set())
+    return {"fabric"} if loader == "fabric" else {"forge"}
+
+
+def _modrinth_known(paths: list) -> dict:
+    """{chemin: (version Modrinth, server_side du projet)} pour les jars que
+    Modrinth reconnaît à leur empreinte. Vide sans réseau."""
+    hashes = {}
+    for p in paths:
+        try:
+            hashes[_sha1(Path(p))] = p
+        except OSError:
+            pass
+    if not hashes:
+        return {}
+    try:
+        r = requests.post(f"{MODRINTH_API}/version_files",
+                          json={"hashes": list(hashes), "algorithm": "sha1"},
+                          headers=_UA, timeout=20)
+        r.raise_for_status()
+        versions = r.json()
+        ids = sorted({v["project_id"] for v in versions.values()})
+        sides = {}
+        for i in range(0, len(ids), 200):
+            r = requests.get(f"{MODRINTH_API}/projects",
+                             params={"ids": json.dumps(ids[i:i + 200])},
+                             headers=_UA, timeout=20)
+            r.raise_for_status()
+            sides.update({p["id"]: p.get("server_side", "")
+                          for p in r.json()})
+    except (requests.RequestException, ValueError, KeyError):
+        return {}
+    return {hashes[h]: (v, sides.get(v["project_id"], ""))
+            for h, v in versions.items() if h in hashes}
+
+
+def audit(server_dir: Path, loader: str, mc_version: str,
+          online: bool = True) -> list:
+    """Mods / plugins installés qui ne peuvent pas marcher sur ce serveur :
+    [{path, name, kind, reason, detail}], reason = 'client' (mod 100 %
+    client), 'loader' (fait pour un autre loader), 'java' (plugin compilé
+    pour un Java trop récent) ou 'version' (autre version de Minecraft).
+    `online=False` : métadonnées des jars seulement, aucun appel réseau."""
+    items = [it for it in list_installed(Path(server_dir), loader)
+             if not it.get("disabled")]
+    known = _modrinth_known([it["path"] for it in items]) if online else {}
+    cap = _java_cap(mc_version)
+    out = []
+    for it in items:
+        jar = Path(it["path"])
+        kinds, client = _jar_info(jar)
+        version, side = known.get(it["path"], (None, ""))
+        accepted = _accepted_kinds(loader, it["kind"], mc_version)
+        reason = detail = ""
+        if kinds and not kinds & accepted:
+            reason, detail = "loader", ", ".join(sorted(kinds))
+        elif it["kind"] == "mod" and (client or side == "unsupported"):
+            reason = "client"
+        elif it["kind"] == "plugin" and cap and _plugin_java(jar) > cap:
+            reason, detail = "java", str(_plugin_java(jar))
+        elif version and mc_version not in version.get("game_versions", []):
+            gv = version.get("game_versions") or ["?"]
+            reason = "version"
+            detail = gv[0] if len(gv) == 1 else f"{gv[0]} – {gv[-1]}"
+        if reason:
+            out.append({**it, "reason": reason, "detail": detail})
+    return out
+
+
+def audit_text(issue: dict, loader: str, mc_version: str) -> str:
+    """Explication d'un problème trouvé par `audit`."""
+    return t("mods_why_" + issue["reason"], detail=issue["detail"],
+             loader=loader, mc=mc_version, java=_java_cap(mc_version))
 
 
 # ------------------------------------------------------------------- Modrinth
@@ -217,12 +392,10 @@ def search_modrinth(query: str, loader: str, mc_version: str,
     facets = [["project_type:" + ("plugin" if kind == "plugin" else "mod")]]
     if mc_version:
         facets.append(["versions:" + mc_version])
-    loaders = LOADER_MAP.get(loader, [loader])
-    # mohist : mods = forge ; plugins = bukkit/paper
-    if loader == "mohist":
-        loaders = ["forge"] if kind == "mod" else ["bukkit", "paper", "spigot"]
+    loaders = _loaders_for(loader, kind)
     # Modrinth : éléments d'une même sous-liste = OU logique
     facets.append([f"categories:{l}" for l in loaders])
+    facets.append(["server_side!=unsupported"])   # pas de mod 100 % client
     r = requests.get(
         f"{MODRINTH_API}/search",
         params={
@@ -245,48 +418,108 @@ def search_modrinth(query: str, loader: str, mc_version: str,
 
 
 def _modrinth_versions(project: str, loaders: list, mc_version: str) -> list:
-    params = {
-        "loaders": json.dumps(loaders),
-        "game_versions": json.dumps([mc_version]),
-    }
+    """Versions du projet pour ce loader ET cette version de Minecraft.
+    Aucun repli sur un autre loader : un jar Fabric ou Paper posé dans un
+    serveur Forge l'empêche de démarrer."""
     r = requests.get(
         f"{MODRINTH_API}/project/{project}/version",
-        params=params, headers=_UA, timeout=30,
+        params={"loaders": json.dumps(loaders),
+                "game_versions": json.dumps([mc_version])},
+        headers=_UA, timeout=30,
     )
     r.raise_for_status()
-    versions = r.json()
-    if not versions and loaders:
-        params.pop("loaders")
-        r = requests.get(
-            f"{MODRINTH_API}/project/{project}/version",
-            params=params, headers=_UA, timeout=30,
-        )
+    return r.json()
+
+
+def _loaders_for(loader: str, kind: str) -> list:
+    # mohist : mods = forge ; plugins = bukkit/paper
+    if loader == "mohist":
+        return ["forge"] if kind == "mod" else ["bukkit", "paper", "spigot"]
+    return LOADER_MAP.get(loader, [loader])
+
+
+def _required_deps(version: dict) -> list:
+    return [str(d["project_id"]) for d in version.get("dependencies") or []
+            if d.get("dependency_type") == "required" and d.get("project_id")]
+
+
+def _install_deps(deps: list, parent: str, dest: Path, server_dir: Path,
+                  loader: str, mc_version: str, kind: str, seen: set,
+                  replaced: list | None, log=None) -> None:
+    """Installe les dépendances obligatoires absentes. Si l'une d'elles est
+    introuvable, `dest` est retiré : le mod seul ferait planter le serveur."""
+    have = _installed_projects(server_dir)
+    for pid in deps:
+        if pid in seen or pid in have:
+            continue
+        try:
+            got = install_modrinth(pid, server_dir, loader, mc_version, kind,
+                                   replaced=replaced, _seen=seen, log=log)
+        except (ModError, requests.RequestException) as e:
+            dest.unlink(missing_ok=True)
+            raise ModError(t("mod_err_dep", name=parent,
+                             e=explain(e))) from e
+        if log:
+            log(t("mod_dep_added", name=got.name))
+
+
+def _installed_projects(server_dir: Path) -> set:
+    return {str(info.get("project")) for rel, info in
+            _manifest(server_dir).items() if (Path(server_dir) / rel).exists()}
+
+
+def _server_side(project: str) -> str:
+    """`server_side` du projet Modrinth ("" si inconnu ou injoignable)."""
+    try:
+        r = requests.get(f"{MODRINTH_API}/project/{project}", headers=_UA,
+                         timeout=15)
         r.raise_for_status()
-        versions = r.json()
-    return versions
+        return str(r.json().get("server_side") or "")
+    except (requests.RequestException, ValueError):
+        return ""
 
 
 def install_modrinth(project_slug: str, server_dir: Path, loader: str,
                      mc_version: str, kind: str, progress_cb=None,
-                     replaced: list | None = None) -> Path:
-    """Installe la dernière version compatible (release de préférence).
+                     replaced: list | None = None, _seen: set | None = None,
+                     log=None) -> Path:
+    """Installe la dernière version compatible (release de préférence) et
+    ses dépendances obligatoires (ViaFabric pour ViaVersion, Fabric API…) :
+    sans elles le serveur refuse de démarrer.
     `replaced` : liste complétée avec les anciennes versions retirées."""
-    loaders = LOADER_MAP.get(loader, [loader])
-    if loader == "mohist":
-        loaders = ["forge"] if kind == "mod" else ["bukkit", "paper", "spigot"]
-    versions = _modrinth_versions(project_slug, loaders, mc_version)
+    versions = _modrinth_versions(project_slug, _loaders_for(loader, kind),
+                                  mc_version)
     if not versions:
-        raise ModError(f"{project_slug} : aucune version pour {mc_version}")
-    version = _best_version(versions)
-    jar = _pick_jar(version.get("files", []))
-    if not jar:
-        raise ModError(f"{project_slug} : aucun fichier .jar téléchargeable")
-    dest = target_dir(server_dir, loader, kind) / jar["filename"]
-    download_file(jar["url"], dest, progress_cb)
-    old = record_install(server_dir, dest, "modrinth",
-                         version.get("project_id") or project_slug)
+        raise ModError(t("mod_err_noversion", name=project_slug,
+                         loader=loader, mc=mc_version))
+    project = str(versions[0].get("project_id") or project_slug)
+    seen = _seen if _seen is not None else set()
+    client_only = _seen is None and kind == "mod" and \
+        _server_side(project) == "unsupported"
+    if client_only:
+        raise ModError(t("mod_err_client", name=project_slug))
+    seen.add(project)
+    # plugin : la version la plus récente que le Java du serveur sait charger
+    cap = _java_cap(mc_version) if kind == "plugin" else 0
+    folder = target_dir(server_dir, loader, kind)
+    for version in _by_preference(versions)[:6 if cap else 1]:
+        jar = _pick_jar(version.get("files", []))
+        if not jar:
+            raise ModError(
+                f"{project_slug} : aucun fichier .jar téléchargeable")
+        dest = folder / jar["filename"]
+        download_file(jar["url"], dest, progress_cb)
+        if not cap or _plugin_java(dest) <= cap:
+            break
+        dest.unlink(missing_ok=True)
+    else:
+        raise ModError(t("mod_err_java", name=project_slug, mc=mc_version,
+                         java=cap))
+    old = record_install(server_dir, dest, "modrinth", project)
     if replaced is not None:
         replaced += old
+    _install_deps(_required_deps(version), project_slug, dest, server_dir,
+                  loader, mc_version, kind, seen, replaced, log)
     return dest
 
 
@@ -465,11 +698,9 @@ def modrinth_version_list(project_slug: str, loader: str,
     """Toutes les versions d'un projet compatibles loader/MC, plus récentes
     d'abord. Chaque entrée : name, date, game_versions, release_type, url,
     filename."""
-    loaders = LOADER_MAP.get(loader, [loader])
-    if loader == "mohist":
-        loaders = ["forge"] if kind == "mod" else ["bukkit", "paper", "spigot"]
     out = []
-    for v in _modrinth_versions(project_slug, loaders, mc_version):
+    for v in _modrinth_versions(project_slug, _loaders_for(loader, kind),
+                                mc_version):
         jar = _pick_jar(v.get("files", []))
         if not jar:
             continue
@@ -480,6 +711,7 @@ def modrinth_version_list(project_slug: str, loader: str,
             "game_versions": ", ".join(v["game_versions"]),
             "release_type": v.get("version_type", "release"),
             "url": jar["url"], "filename": jar["filename"],
+            "deps": _required_deps(v),
         })
     return out
 
@@ -521,9 +753,12 @@ def version_list(result: dict, loader: str, mc_version: str,
 
 def download_to(url: str, filename: str, server_dir: Path, loader: str,
                 kind: str, progress_cb=None, result: dict | None = None,
-                replaced: list | None = None) -> Path:
+                replaced: list | None = None, deps: list | None = None,
+                mc_version: str = "") -> Path:
     """Télécharge une version précise. `result` (résultat de recherche) :
-    permet de remplacer la version déjà installée du même projet."""
+    permet de remplacer la version déjà installée du même projet.
+    `deps` : projets Modrinth obligatoires de cette version, installés s'ils
+    manquent (pour `mc_version`)."""
     dest = target_dir(server_dir, loader, kind) / filename
     download_file(url, dest, progress_cb)
     if result:
@@ -531,6 +766,10 @@ def download_to(url: str, filename: str, server_dir: Path, loader: str,
                              result["id"])
         if replaced is not None:
             replaced += old
+    if deps and mc_version:
+        _install_deps(deps, filename, dest, server_dir, loader, mc_version,
+                      kind, {str(result["id"])} if result else set(),
+                      replaced)
     return dest
 
 
@@ -546,7 +785,8 @@ def install_voice_mod(
     """Télécharge le plugin/mod Voice Chat dans plugins/ ou mods/."""
     project = VOICE_PROJECTS[which]
     kind = "plugin" if loader in ("paper", "purpur") else "mod"
-    versions = _modrinth_versions(project, LOADER_MAP[loader], mc_version)
+    versions = _modrinth_versions(project, _loaders_for(loader, kind),
+                                  mc_version)
     if not versions:
         raise ModError(
             f"{VOICE_LABELS[which]} : aucune version trouvée pour {loader} {mc_version}"

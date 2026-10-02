@@ -70,8 +70,13 @@ version de Minecraft choisie, un JRE Temurin est téléchargé dans `runtimes/`.
 - **Depuis un modpack** : `.mrpack` (Modrinth) ou zip CurseForge — loader,
   version et mods serveur repris du pack, mods client ignorés.
 - **Voice Chat** : Simple Voice Chat ou Plasmo Voice.
-- **Cross-play Bedrock** : Geyser, Floodgate et ViaVersion installés et
-  configurés seuls (UDP 19132).
+- **Cross-play Bedrock** : Geyser, Floodgate et ViaVersion (ViaFabric sur
+  Fabric) installés et configurés seuls (UDP 19132). Sur Forge, NeoForge et
+  les anciennes versions, **ViaProxy** traduit la version : les joueurs
+  Bedrock entrent quelle que soit la version du serveur. Geyser se met à
+  jour à chaque démarrage, en même temps que Bedrock.
+- Chaque version de Minecraft est lancée avec **le Java qu'il lui faut**
+  (Java 8 pour 1.16.5 et avant, 17, 21 ou 25 ensuite), téléchargé si besoin.
 
 ### Mes Serveurs
 - **Tableau de bord** : état, adresses à copier d'un clic, RAM, CPU, joueurs,
@@ -81,9 +86,12 @@ version de Minecraft choisie, un JRE Temurin est téléchargé dans `runtimes/`.
 - **Joueurs** : en ligne, bannis, opérateurs et **whitelist** — tout
   fonctionne serveur lancé ou arrêté.
 - **Fiche joueur** : mini-carte du monde, position exacte, **inventaire
-  façon jeu** avec les textures officielles. On peut donner un objet, en
-  retirer un, tout supprimer (avec confirmation) et **déplacer les objets
-  par glisser-déposer**, que le joueur soit connecté ou non.
+  façon jeu** avec les textures officielles. On peut retirer un objet, tout
+  supprimer (avec confirmation) et **déplacer les objets par
+  glisser-déposer**, que le joueur soit connecté ou non.
+- **Donner un objet comme en créatif** : catalogue de tous les objets du jeu
+  **et des mods installés sur le serveur**, avec leurs textures et leur nom
+  traduit, recherche, quantité 1 / 16 / 64, double-clic pour donner.
 - **Sauvegardes** : avant chaque arrêt, à intervalle régulier, à la demande ;
   restauration en un clic.
 - **Dupliquer** un serveur (monde, mods, configs) sur un port libre pour
@@ -98,6 +106,14 @@ version de Minecraft choisie, un JRE Temurin est téléchargé dans `runtimes/`.
 - Recherche **Modrinth** (sans clé) et **CurseForge** (avec ta clé).
 - Installation dans `mods/` ou `plugins/` selon le serveur ; une nouvelle
   version **remplace** l'ancienne au lieu de créer un doublon.
+- Les **dépendances obligatoires** sont installées avec le mod (Fabric API,
+  ViaFabric…) ; seules les versions faites pour ce type de serveur et cette
+  version de Minecraft sont proposées ; les mods 100 % client sont écartés.
+- Bouton **« Vérifier »** : repère les fichiers qui empêchent le serveur de
+  démarrer (mod client, mod d'un autre loader, autre version de Minecraft,
+  plugin trop récent pour son Java) et les **désactive sans les
+  supprimer**. Les mêmes problèmes sont signalés dans la console au
+  lancement.
 - Import de modpack avec tri automatique mods client / mods serveur.
 
 ### Playit.gg — une adresse sans ouvrir de port
@@ -107,7 +123,8 @@ l'agent avec le serveur et affiche l'adresse à donner à tes amis. Un éditeur
 manuel de tunnels reste disponible dans ⚙ Config.
 
 ### Paramètres
-Langue, thème, fenêtre d'administration au lancement, graphique de
+Langue, thème clair ou sombre, **couleur de l'interface** (bleu, émeraude,
+violet, orange, rose), fenêtre d'administration au lancement, graphique de
 monitoring, notifications Discord (webhook), compte Playit, clé CurseForge,
 Agent IA (bêta, désactivé par défaut).
 
@@ -181,7 +198,7 @@ app/
     app_window.py        # fenêtre principale, paramètres, aide
     tab_servers.py tab_creator.py tab_ai.py
     server_window.py server_settings.py mods_manager.py
-    player_card.py inventory_view.py players_panel.py
+    player_card.py inventory_view.py item_catalog.py players_panel.py
     theme.py feedback.py # couleurs, icônes, notifications
 tests/                   # pytest
 docs/screenshots/        # captures du README

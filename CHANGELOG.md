@@ -1,6 +1,75 @@
 # Versions — ServerCraft Agent
 
-## v1.30.0 — Release (2026-10-01)
+> Numérotation revue le 2026-10-03 : la version publiée sous le numéro
+> 1.0.0 s'appelle désormais **0.8.0**, la 1.1.0 **0.8.1** et la 1.30.0
+> **0.9.0**. La **1.0.0 Beta** ci-dessous est la première version stable.
+
+## v1.0.0 — Beta stable (2026-10-03)
+
+**Corrections**
+
+*Bedrock (cross-play)*
+- **« Version incompatible » sur Forge, NeoForge et les anciennes
+  versions** : Geyser parle toujours la dernière version de Java, et ces
+  serveurs ne peuvent pas porter ViaVersion — ils répondaient « Client
+  incompatible ». **ViaProxy** est maintenant lancé entre Geyser et le
+  serveur et traduit la version (vérifié sur Forge 1.20.1 et Paper 1.16.5)
+- **Geyser mis à jour à chaque démarrage** : Bedrock se met à jour tout
+  seul sur les téléphones et consoles, un Geyser resté à l'ancienne version
+  refusait les joueurs
+- Geyser et ViaProxy ont leur propre Java : celui d'un vieux serveur
+  (Java 8) ne les lançait pas
+
+*Comptes crack / dernières versions*
+- **Serveur Fabric qui ne démarrait plus** avec le cross-play : ViaVersion
+  était installé sans **ViaFabric**, sa dépendance obligatoire (« Incompatible
+  mods found »). Les dépendances obligatoires de chaque mod (ViaFabric,
+  Fabric API pour EasyAuth…) sont maintenant installées avec lui ; si l'une
+  manque, le mod n'est pas laissé seul
+- Plus jamais de jar fait pour un autre loader : quand un mod n'existait pas
+  pour le serveur, l'app prenait la version d'un autre loader (un plugin
+  Paper ou un mod Fabric dans un serveur Forge)
+- Anciennes versions : chaque version de Minecraft tourne avec le Java qu'il
+  lui faut (Paper 1.16.5 refuse Java 17+, vieux Forge plante au-delà de
+  Java 8) ; un plugin compilé pour un Java plus récent (AuthMe 6 sur 1.16.5)
+  est remplacé par une version qui se charge, sinon il n'est pas installé
+
+*Playit.gg*
+- **Les tunnels ne se créaient pas** : l'API refusait la création tant que
+  l'agent n'avait jamais tourné (« AgentVersionTooOld ») et le format de la
+  requête n'était plus accepté. L'agent est lancé avant la création, la
+  requête suit le format attendu (vérifié sur un vrai compte)
+
+*Mods client*
+- Les mods 100 % client ne sont plus proposés dans la recherche et sont
+  refusés à l'installation
+- Import de modpack : un mod Forge sans indication de côté était gardé comme
+  « serveur » même s'il s'agit d'un mod client connu (minimap, shaders…)
+
+**Nouveautés**
+- **Donner un objet comme en créatif** : catalogue de tous les objets du jeu
+  et des **mods installés sur le serveur**, avec leurs textures et leur nom
+  traduit, recherche, quantité 1 / 16 / 64, double-clic pour donner. Les
+  objets des mods s'affichent aussi avec leur texture dans l'inventaire
+- Blocs de Minecraft 26.x enfin dessinés dans l'inventaire (au lieu de
+  pastilles)
+- Gestionnaire de mods : bouton **« Vérifier »** — repère les fichiers qui
+  empêchent le serveur de démarrer (mod client, autre loader, autre version
+  de Minecraft, plugin trop récent pour son Java) et les **désactive sans les
+  supprimer** ; réactivation depuis la liste. Les mêmes problèmes sont
+  signalés dans la console au lancement
+- Choix d'une version précise d'un mod : ses dépendances sont installées
+  aussi
+
+**Interface**
+- Navigation dans l'en-tête, à la place de la barre d'onglets
+- Choix du type de serveur en cartes (couleur, usage) dans le créateur
+- Une couleur par type de serveur dans la liste et l'en-tête du serveur ;
+  statut « En ligne · n joueurs » sous chaque serveur
+- **Couleur de l'interface** au choix dans ⚙ Paramètres : bleu, émeraude,
+  violet, orange, rose
+
+## v0.9.0 — Release (2026-10-01) — *publiée à l'origine sous le numéro 1.30.0*
 
 **Corrections**
 
@@ -87,7 +156,7 @@
 - Première suite de tests automatiques (`python -m pytest`, 144 tests,
   sans réseau ni Java)
 
-## v1.1.0 — Release (2026-09-30)
+## v0.8.1 — Release (2026-09-30) — *publiée à l'origine sous le numéro 1.1.0*
 
 **IP gratuite automatique avec Playit.gg** (sans ouvrir de port ni donner
 son IP publique)
@@ -129,7 +198,7 @@ son IP publique)
   deux colonnes si elles sont longues
 - Carte joueur : l'inventaire restait minuscule (mauvaise ligne extensible)
 
-## v1.0.0 — Release (2026-09-29)
+## v0.8.0 — Release (2026-09-29) — *publiée à l'origine sous le numéro 1.0.0*
 
 **Sauvegardes automatiques**
 - Zip du monde (`world`, `world_nether`, `world_the_end`) dans

@@ -1,6 +1,6 @@
-# Promotion — ServerCraft Agent 1.30
+# Promotion — ServerCraft Agent 1.0 Beta
 
-Textes prêts à adapter pour annoncer la version 1.30.
+Textes prêts à adapter pour annoncer la version 1.0 Beta.
 
 | Fichier | Contenu |
 |---|---|

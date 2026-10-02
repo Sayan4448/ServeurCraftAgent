@@ -48,11 +48,47 @@ RADIUS = 12            # cartes
 RADIUS_SM = 8          # champs, boutons, lignes de liste
 PAD = 12
 
-# Boutons segmentés : même fond que les champs, sélection bleue — sans le
-# cadre gris par défaut de CustomTkinter. À passer en **theme.SEG.
-SEG = dict(fg_color=PANEL_2, selected_color=SEL, selected_hover_color=SEL_HOVER,
-           unselected_color=PANEL_2, unselected_hover_color=HOVER,
-           text_color=TEXT, corner_radius=RADIUS_SM)
+# Couleur d'accent au choix (⚙ Paramètres) : (accent, survol, sélection,
+# survol de la sélection), chacun en (clair, sombre).
+ACCENTS = {
+    "blue": (("#2563eb", "#3b82f6"), ("#1d4ed8", "#2563eb"),
+             ("#bfdbfe", "#1e40af"), ("#93c5fd", "#1d4ed8")),
+    "emerald": (("#059669", "#10b981"), ("#047857", "#059669"),
+                ("#a7f3d0", "#065f46"), ("#6ee7b7", "#047857")),
+    "violet": (("#7c3aed", "#8b5cf6"), ("#6d28d9", "#7c3aed"),
+               ("#ddd6fe", "#5b21b6"), ("#c4b5fd", "#6d28d9")),
+    "orange": (("#ea580c", "#f97316"), ("#c2410c", "#ea580c"),
+               ("#fed7aa", "#9a3412"), ("#fdba74", "#c2410c")),
+    "pink": (("#db2777", "#ec4899"), ("#be185d", "#db2777"),
+             ("#fbcfe8", "#9d174d"), ("#f9a8d4", "#be185d")),
+}
+
+# Couleur propre à chaque type de serveur (pastilles, cartes, créateur)
+LOADER_COLORS = {
+    "paper": ("#2563eb", "#60a5fa"), "purpur": ("#7c3aed", "#c084fc"),
+    "fabric": ("#a16207", "#e3c08d"), "forge": ("#c2410c", "#fb923c"),
+    "neoforge": ("#b45309", "#fbbf24"), "mohist": ("#0f766e", "#2dd4bf"),
+}
+
+
+def _seg() -> dict:
+    # Boutons segmentés : même fond que les champs, sélection à la couleur
+    # d'accent — sans le cadre gris par défaut. À passer en **theme.SEG.
+    return dict(fg_color=PANEL_2, selected_color=SEL,
+                selected_hover_color=SEL_HOVER, unselected_color=PANEL_2,
+                unselected_hover_color=HOVER, text_color=TEXT,
+                corner_radius=RADIUS_SM)
+
+
+SEG = _seg()
+
+
+def set_accent(name: str) -> None:
+    """Change la couleur d'accent. À appeler avant de créer l'interface :
+    les widgets lisent les couleurs à leur création."""
+    global ACCENT, ACCENT_HOVER, SEL, SEL_HOVER, SEG
+    ACCENT, ACCENT_HOVER, SEL, SEL_HOVER = ACCENTS.get(name, ACCENTS["blue"])
+    SEG = _seg()
 
 
 def is_dark() -> bool:

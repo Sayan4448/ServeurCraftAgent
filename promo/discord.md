@@ -6,21 +6,21 @@ serveur, ou un salon « projets » / « showcase » d'une communauté — demand
 
 ## Français
 
-> **ServerCraft Agent 1.30 est sorti** 🎉
+> **ServerCraft Agent 1.0 Beta est sorti** 🎉
 >
 > Pour rappel : une app Windows gratuite pour créer et gérer un serveur
 > Minecraft sans ligne de commande (Paper, Purpur, Fabric, Forge,
 > NeoForge, Mohist).
 >
 > **Dans cette version**
-> • Inventaire des joueurs : on peut enfin **déplacer les objets** à la
->   souris, et « Retirer » vise la bonne case
-> • Console : historique des commandes (↑ ↓), filtre, copie
-> • **Whitelist** dans le panneau joueurs
-> • **Dupliquer un serveur** pour tester sans risque
-> • L'app prévient si le port est déjà utilisé, avant de lancer
-> • Interface plus nette : vraies icônes, notifications, raccourcis (F1)
-> • Une vingtaine de bugs corrigés
+> • **Donner un objet comme en créatif** : tous les objets du jeu et des
+>   mods du serveur, avec leurs textures, en un double-clic
+> • **Bedrock** : fini « version incompatible » sur Forge, NeoForge et les
+>   anciennes versions
+> • **IP gratuite Playit** : les tunnels se créent enfin
+> • Les **dépendances des mods** s'installent seules, et un bouton
+>   « Vérifier » repère les mods qui font planter le serveur
+> • Interface refaite, couleur au choix
 >
 > Téléchargement et notes de version : [lien]
 >
@@ -28,21 +28,21 @@ serveur, ou un salon « projets » / « showcase » d'une communauté — demand
 
 ## English
 
-> **ServerCraft Agent 1.30 is out** 🎉
+> **ServerCraft Agent 1.0 Beta is out** 🎉
 >
 > Reminder: a free Windows app to create and manage a Minecraft server
 > without the command line (Paper, Purpur, Fabric, Forge, NeoForge,
 > Mohist).
 >
 > **In this release**
-> • Player inventories: you can now **drag items around**, and "Remove"
->   hits the right slot
-> • Console: command history (↑ ↓), filter, copy
-> • **Whitelist** tab in the players panel
-> • **Duplicate a server** to test things safely
-> • The app warns you when the port is already in use, before starting
-> • Cleaner UI: real icons, notifications, keyboard shortcuts (F1)
-> • About twenty bugs fixed
+> • **Give items creative-style**: every vanilla item and every item from
+>   the server's mods, with textures, in one double-click
+> • **Bedrock**: no more "incompatible version" on Forge, NeoForge and old
+>   versions
+> • **Free Playit address**: tunnels are finally created
+> • **Mod dependencies** install themselves, and a "Check" button finds
+>   the mods that crash the server
+> • Redesigned UI, pick your colour
 >
 > Download and release notes: [lien]
 >

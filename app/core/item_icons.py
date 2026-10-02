@@ -7,7 +7,12 @@ textures d'items / blocs sont gardés dans runtimes/textures/<version>/.
 
 Rendu : items « plats » (item/generated, handheld…) = calques superposés ;
 blocs = petit cube isométrique (dessus / côté / face) ; sinon repli sur une
-pastille avec les initiales (items moddés, coffres, lits…).
+pastille avec les initiales (coffres, lits…).
+
+Objets des mods : les modèles et textures sont lus dans les jars de mods/
+du serveur (`mod_roots`), un dossier par espace de noms (`create`, …).
+`catalog()` liste tous les objets connus, avec leur nom dans la langue de
+l'app, pour le catalogue « Donner » façon inventaire créatif.
 """
 import json
 import threading
@@ -20,8 +25,21 @@ from ..config import RUNTIMES_DIR
 from .downloader import _get_json, download_file
 
 MANIFEST = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json"
+# items/ : définitions d'objets (1.21.4+), qui remplacent models/item pour
+# les blocs ; lang/ : noms affichés
 _KEEP = ("assets/minecraft/textures/item/", "assets/minecraft/textures/block/",
-         "assets/minecraft/models/item/", "assets/minecraft/models/block/")
+         "assets/minecraft/models/item/", "assets/minecraft/models/block/",
+         "assets/minecraft/items/", "assets/minecraft/lang/")
+ASSETS = "https://resources.download.minecraft.net/{}/{}"
+# langue de l'app -> fichier de langue de Minecraft
+LANG_CODES = {"fr": "fr_fr", "en": "en_us", "ru": "ru_ru", "ja": "ja_jp",
+              "es": "es_es", "de": "de_de"}
+MODS_CACHE = "_mods"
+# textures de mods inutiles pour des icônes d'objets
+_MOD_SKIP = ("textures/entity/", "textures/gui/", "textures/models/",
+             "textures/environment/", "textures/particle/",
+             "textures/painting/", "textures/mob_effect/", "textures/font/",
+             "textures/misc/")
 _FLAT = ("item/generated", "item/handheld", "builtin/generated")
 # textures en niveaux de gris teintées par le biome / la couleur par défaut
 _TINTS = {
@@ -54,14 +72,16 @@ def tex_dir(version: str) -> Path:
 
 
 def available(version: str) -> bool:
-    return (tex_dir(version) / ".ok").exists()
+    # lang/ : ajouté avec le catalogue — un cache plus ancien est refait
+    d = tex_dir(version)
+    return (d / ".ok").exists() and (d / "lang" / "en_us.json").exists()
 
 
 def cached_versions() -> list:
     root = RUNTIMES_DIR / "textures"
     if not root.exists():
         return []
-    return sorted(p.name for p in root.iterdir() if (p / ".ok").exists())
+    return sorted(p.name for p in root.iterdir() if available(p.name))
 
 
 def best_cached(version: str) -> Path | None:
@@ -91,7 +111,8 @@ def ensure(version: str, progress=None) -> Path:
             if entry is None:          # version exotique -> dernière release
                 latest = man["latest"]["release"]
                 entry = next(v for v in man["versions"] if v["id"] == latest)
-            url = _get_json(entry["url"])["downloads"]["client"]["url"]
+            meta = _get_json(entry["url"])
+            url = meta["downloads"]["client"]["url"]
             jar = d.parent / f"{version}-client.jar"
             download_file(url, jar, progress)
             with zipfile.ZipFile(jar) as z:
@@ -101,25 +122,153 @@ def ensure(version: str, progress=None) -> Path:
                         out.parent.mkdir(parents=True, exist_ok=True)
                         out.write_bytes(z.read(n))
             jar.unlink(missing_ok=True)
+            _fetch_langs(meta, d)
             (d / ".ok").write_text(entry["id"], encoding="utf-8")
         except Exception as e:  # noqa: BLE001 — réseau, zip, disque
             raise TextureError(str(e)) from e
     return d
 
 
+def _fetch_langs(meta: dict, d: Path) -> None:
+    """Noms des objets dans les langues de l'app (le jar ne contient que
+    l'anglais ; les autres sont dans l'index des ressources). Facultatif :
+    sans eux, les noms restent en anglais."""
+    try:
+        objects = _get_json(meta["assetIndex"]["url"])["objects"]
+        for code in LANG_CODES.values():
+            h = (objects.get(f"minecraft/lang/{code}.json") or {}).get("hash")
+            if h and not (d / "lang" / f"{code}.json").exists():
+                download_file(ASSETS.format(h[:2], h),
+                              d / "lang" / f"{code}.json")
+    except Exception:  # noqa: BLE001 — réseau, format de l'index
+        pass
+
+
+# ============================================================ mods
+
+def mod_roots(server_dir: Path) -> dict:
+    """{espace de noms: dossier models/ textures/ lang/} des mods du serveur.
+    Les assets de chaque jar sont extraits une fois dans
+    runtimes/textures/_mods/ (bloquant : à appeler depuis un thread)."""
+    # ponytail: les jars imbriqués (META-INF/jars) ne sont pas ouverts et le
+    # cache des mods retirés n'est jamais purgé — à faire si ça pèse.
+    roots = {}
+    for jar in sorted((Path(server_dir) / "mods").glob("*.jar")):
+        try:
+            d = RUNTIMES_DIR / "textures" / MODS_CACHE / \
+                f"{jar.stem}-{jar.stat().st_size}"
+            if not (d / ".ok").exists():
+                _extract_mod(jar, d)
+            for ns in d.iterdir():
+                if ns.is_dir() and ns.name != "minecraft":
+                    roots.setdefault(ns.name, ns)
+        except (OSError, zipfile.BadZipFile):
+            continue
+    return roots
+
+
+def _extract_mod(jar: Path, d: Path) -> None:
+    langs = tuple(LANG_CODES.values())
+    with zipfile.ZipFile(jar) as z:
+        for info in z.infolist():
+            parts = info.filename.split("/", 2)
+            if len(parts) < 3 or parts[0] != "assets" or info.is_dir() \
+                    or ".." in info.filename:
+                continue
+            rel = parts[2]
+            if rel.endswith(".json"):
+                keep = rel.startswith(("models/item/", "models/block/",
+                                       "items/")) or \
+                    (rel.startswith("lang/") and rel[5:-5] in langs)
+            else:
+                keep = rel.startswith("textures/") and rel.endswith(".png") \
+                    and not rel.startswith(_MOD_SKIP) \
+                    and info.file_size < 300_000
+            if keep:
+                out = d / parts[1] / rel
+                out.parent.mkdir(parents=True, exist_ok=True)
+                out.write_bytes(z.read(info))
+    d.mkdir(parents=True, exist_ok=True)
+    (d / ".ok").write_text(jar.name, encoding="utf-8")
+
+
+# ============================================================ catalogue
+
+def _lang(root: Path, code: str) -> dict:
+    """Noms de `root/lang` : anglais, complété par la langue demandée."""
+    names = {}
+    for c in dict.fromkeys(("en_us", code)):
+        try:
+            data = json.loads((root / "lang" / f"{c}.json").read_text(
+                encoding="utf-8"))
+            names.update({k: v for k, v in data.items()
+                          if isinstance(v, str)})
+        except (OSError, ValueError):
+            pass
+    return names
+
+
+def catalog(roots: dict, lang: str = "en") -> list:
+    """Tous les objets connus : [(id complet, nom affiché)], par espace de
+    noms (`roots` = {"minecraft": dossier des textures, mod: dossier…})."""
+    code = LANG_CODES.get(lang, "en_us")
+    out = []
+    for ns, root in roots.items():
+        names = _lang(root, code)
+        ids = {f.stem for f in (root / "items").glob("*.json")}
+        if not ids:                    # avant 1.21.4 : un modèle par objet,
+            ids = {f.stem for f in (root / "models" / "item").glob("*.json")}
+            named = {i for i in ids if f"item.{ns}.{i}" in names
+                     or f"block.{ns}.{i}" in names}
+            ids = named or ids         # mais aussi des gabarits sans nom
+        for i in sorted(ids - {"air"}):
+            title = names.get(f"item.{ns}.{i}") or \
+                names.get(f"block.{ns}.{i}") or i.replace("_", " ").title()
+            out.append((f"{ns}:{i}", title))
+    return out
+
+
 # ============================================================ rendu
 
-def _name(ref: str) -> str:
-    """'minecraft:item/x' -> 'item/x'."""
-    return ref.split(":", 1)[-1]
+def _split(ref: str) -> tuple:
+    """'create:item/x' -> ('create', 'item/x') ; sans préfixe : minecraft."""
+    ns, _, path = ref.rpartition(":")
+    return ns or "minecraft", path
+
+
+def _first_model(node):
+    """Modèle affiché par défaut d'une définition d'objet (items/*.json) :
+    premier modèle simple trouvé, en préférant l'état « au repos »."""
+    if isinstance(node, str):
+        return node
+    if isinstance(node, list):
+        return next((m for m in map(_first_model, node) if m), None)
+    if not isinstance(node, dict):
+        return None
+    kind = _split(str(node.get("type", "")))[1]
+    if kind == "model" and isinstance(node.get("model"), str):
+        return node["model"]
+    if kind == "special":
+        return node.get("base")
+    for key in ("on_false", "fallback", "model", "models", "cases",
+                "entries"):
+        found = _first_model(node.get(key))
+        if found:
+            return found
+    return None
 
 
 class Icons:
-    """Cache d'icônes RGBA carrées de `size` px pour un dossier de textures
-    (None = pas de textures : pastilles à initiales)."""
+    """Cache d'icônes RGBA carrées de `size` px. `root` : dossier des
+    textures de Minecraft (None = pastilles à initiales) ; `extra` :
+    {espace de noms: dossier} pour les objets des mods."""
 
-    def __init__(self, root: Path | None, size: int = 32):
+    def __init__(self, root: Path | None, size: int = 32,
+                 extra: dict | None = None):
         self.root = Path(root) if root else None
+        self.roots = {ns: Path(d) for ns, d in (extra or {}).items()}
+        if self.root:
+            self.roots["minecraft"] = self.root
         self.size = size
         self._cache: dict = {}
         self._models: dict = {}
@@ -128,32 +277,39 @@ class Icons:
         key = item_id
         if key not in self._cache:
             img = None
-            if self.root and item_id.startswith("minecraft:"):
+            ns, name = _split(item_id)
+            if ns in self.roots:
                 try:
-                    img = self._render(item_id.split(":", 1)[1])
+                    img = self._render(ns, name)
                 except Exception:  # noqa: BLE001 — modèle inattendu
                     img = None
             self._cache[key] = img or _placeholder(item_id, self.size)
         return self._cache[key]
 
     # ------------------------------------------------------------ modèles
+    def _json(self, ns: str, rel: str):
+        root = self.roots.get(ns)
+        if root is None:
+            return None
+        try:
+            return json.loads((root / rel).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+
     def _model(self, ref: str):
-        ref = _name(ref)
         if ref not in self._models:
-            f = self.root / "models" / f"{ref}.json"
-            try:
-                self._models[ref] = json.loads(f.read_text(encoding="utf-8"))
-            except (OSError, ValueError):
-                self._models[ref] = None
+            ns, path = _split(ref)
+            self._models[ref] = self._json(ns, f"models/{path}.json")
         return self._models[ref]
 
     def _resolve(self, ref: str):
-        """(chaîne des parents, textures fusionnées) d'un modèle."""
+        """(chaîne des parents sans espace de noms, textures fusionnées)."""
         chain, textures = [], {}
         cur, depth = ref, 0
         while cur and depth < 12:
-            chain.append(_name(cur))
-            m = self._model(cur)
+            ns, path = _split(cur)
+            chain.append(path)
+            m = self._model(f"{ns}:{path}")
             if not m:
                 break
             for k, v in (m.get("textures") or {}).items():
@@ -173,27 +329,31 @@ class Icons:
         return None
 
     def _load(self, ref: str):
-        ref = _name(ref)
-        f = self.root / "textures" / f"{ref}.png"
-        if not f.exists():
+        ns, path = _split(ref)
+        root = self.roots.get(ns)
+        f = root / "textures" / f"{path}.png" if root else None
+        if f is None or not f.exists():
             return None
         img = Image.open(f).convert("RGBA")
         if img.height > img.width:                  # texture animée
             img = img.crop((0, 0, img.width, img.width))
-        tint = _TINTS.get(ref)
+        tint = _TINTS.get(path) if ns == "minecraft" else None
         if tint:
             img = _tint(img, tint)
         return img
 
     # ------------------------------------------------------------ dessin
-    def _render(self, name: str):
-        chain, textures = self._resolve(f"item/{name}")
+    def _render(self, ns: str, name: str):
+        # 1.21.4+ : items/<nom>.json désigne le modèle (souvent block/<nom>)
+        ref = _first_model(self._json(ns, f"items/{name}.json")) or \
+            f"{ns}:item/{name}"
+        chain, textures = self._resolve(ref)
         if any(c in _FLAT or c.startswith("item/handheld") for c in chain):
             layers = [self._tex(textures, f"layer{i}") for i in range(5)]
             layers = [x for x in layers if x is not None]
             if layers:
                 return _flat(layers, self.size)
-        if any(c.startswith("block/") for c in chain[1:]):
+        if any(c.startswith("block/") for c in chain):
             top = self._tex(textures, "top", "end", "up", "all", "texture",
                             "particle")
             side = self._tex(textures, "side", "north", "south", "all",
@@ -205,13 +365,13 @@ class Icons:
             one = self._tex(textures, "cross", "plant", "particle")
             if one is not None:
                 return _flat([one], self.size)
-        for ref in (f"item/{name}", f"block/{name}"):
+        for ref in (f"{ns}:item/{name}", f"{ns}:block/{name}"):
             img = self._load(ref)
             if img is not None:
-                if ref.startswith("block/"):
+                if "block/" in ref:
                     return _cube(img, img, img, self.size)
                 return _flat([img], self.size)
-        one = self._tex(textures, "particle")
+        one = self._tex(textures, "particle", "layer0", "all", "texture")
         return _flat([one], self.size) if one is not None else None
 
 

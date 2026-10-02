@@ -8,20 +8,21 @@ inaperçu. Hashtags : deux au maximum.
 
 **Post**
 
-> ServerCraft Agent 1.30 est sorti.
+> ServerCraft Agent 1.0 Beta est sorti.
 >
 > Une app Windows gratuite pour créer et gérer un serveur Minecraft sans
 > ligne de commande.
 >
-> Nouveau : inventaires modifiables à la souris, whitelist, duplication de
-> serveur, console avec historique.
+> Nouveau : donner n'importe quel objet comme en créatif (mods compris),
+> Bedrock sur toutes les versions, IP gratuite Playit qui marche enfin.
 >
 > [lien] #Minecraft
 
 **Réponse (détail)**
 
-> Aussi dans la 1.30 : l'app prévient si le port est déjà pris, de vraies
-> icônes, des raccourcis clavier, et une vingtaine de bugs en moins.
+> Aussi dans la 1.0 : les dépendances des mods s'installent seules, un
+> bouton « Vérifier » repère les mods qui font planter le serveur, et
+> l'interface a été refaite (couleur au choix).
 >
 > Windows uniquement, projet perso, sans compte ni télémétrie. Les retours
 > sont bienvenus.
@@ -30,20 +31,20 @@ inaperçu. Hashtags : deux au maximum.
 
 **Post**
 
-> ServerCraft Agent 1.30 is out.
+> ServerCraft Agent 1.0 Beta is out.
 >
 > A free Windows app to create and manage a Minecraft server without the
 > command line.
 >
-> New: drag-and-drop player inventories, whitelist, server duplication,
-> console history.
+> New: give any item creative-style (modded ones too), Bedrock on every
+> version, free Playit address that finally works.
 >
 > [lien] #Minecraft
 
 **Reply (details)**
 
-> Also in 1.30: a warning when the port is already taken, real icons,
-> keyboard shortcuts, and about twenty bugs gone.
+> Also in 1.0: mod dependencies install themselves, a "Check" button finds
+> the mods that crash your server, and a redesigned UI (pick your colour).
 >
 > Windows only, personal project, no account, no telemetry. Feedback
 > welcome.
