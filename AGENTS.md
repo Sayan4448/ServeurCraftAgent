@@ -21,8 +21,11 @@
 - Ne pas supprimer de fonctionnalités/boutons sans demande explicite.
 - Version : uniquement dans `app/__init__.py` (`__version__`), lue par `setup.py`
   et par l'interface.
-- Changer d'onglet : `App.show_tab()`, jamais `tabview.set()` deux fois de suite
-  (CTkTabview masque les autres onglets 100 ms plus tard → fenêtre vide).
+- Changer de page : `App.show_tab()` (met aussi à jour la navigation de
+  l'en-tête). `App.tabview` est un `Pages` maison, plus un CTkTabview.
+- Couleurs : `theme.ACCENT`… sont lues à la création des widgets ; la couleur
+  d'accent choisie est appliquée par `main.py` (`theme.set_accent`) avant
+  d'importer l'interface — ne pas importer `app.ui.app_window` avant.
 - Textes : toute nouvelle clé va dans `_V130` de `app/i18n.py`, dans les 6 langues
   (un test vérifie que rien ne manque).
 - Commandes d'inventaire : passer par `playerdata.slot_name()` — le numéro de case

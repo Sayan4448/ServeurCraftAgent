@@ -28,6 +28,7 @@ DEFAULT_SETTINGS = {
     "java_path": "",                    # vide = détection/auto-téléchargement
     "language": "fr",                   # fr | en | ru | ja | es | de
     "theme": "dark",                    # "dark" | "light"
+    "accent": "blue",                   # couleur d'accent (ui.theme.ACCENTS)
     "server_interface": True,           # fenêtre d'administration au lancement
     "monitoring": True,
     "discord_webhook": "",              # vide = aucune notification envoyée

@@ -185,6 +185,11 @@ class ServersTab(ctk.CTkFrame):
             top, text="", font=(theme.FONT, 11, "bold"), corner_radius=10,
             fg_color=theme.PANEL_2, text_color=theme.MUTED, height=24)
         self.state_pill.pack(side="left", padx=12)
+        self.loader_pill = ctk.CTkLabel(
+            top, text="", font=(theme.FONT, 11, "bold"), corner_radius=10,
+            fg_color=theme.PANEL_2, text_color=("#ffffff", "#0b0e13"),
+            height=24)
+        self.loader_pill.pack(side="right")
         self.info_label = ctk.CTkLabel(head, text="", font=(theme.FONT, 12),
                                        text_color=theme.MUTED, anchor="w")
         self.info_label.grid(row=1, column=0, sticky="w", padx=16)
@@ -375,27 +380,49 @@ class ServersTab(ctk.CTkFrame):
             card.grid_columnconfigure(1, weight=1)
             self._cards[meta["name"]] = card
             running = bool(meta.get("running"))
-            dot = ctk.CTkLabel(card, text="●", width=16,
-                               font=(theme.FONT, 14),
-                               text_color=theme.GREEN if running
-                               else theme.DISABLED)
-            dot.grid(row=0, column=0, rowspan=2, padx=(10, 4))
+            color = theme.LOADER_COLORS.get(meta["loader"], theme.ACCENT)
+            stripe = ctk.CTkFrame(card, width=4, height=10, corner_radius=2,
+                                  fg_color=color)
+            stripe.grid(row=0, column=0, rowspan=3, sticky="ns",
+                        padx=(7, 8), pady=9)
             lbl = ctk.CTkLabel(card, text=meta["name"],
                                font=(theme.FONT, 13, "bold"),
                                text_color=theme.TEXT, anchor="w")
-            lbl.grid(row=0, column=1, sticky="w", pady=(8, 0))
+            lbl.grid(row=0, column=1, sticky="w", pady=(7, 0))
+            dot = ctk.CTkLabel(card, text="●", width=16,
+                               font=(theme.FONT, 13),
+                               text_color=theme.GREEN if running
+                               else theme.DISABLED)
+            dot.grid(row=0, column=2, padx=(4, 10), pady=(7, 0))
             loader = LOADER_LABELS.get(meta["loader"], meta["loader"])
             sub = ctk.CTkLabel(
-                card, text=f"{loader} · {meta['mc_version']}",
-                font=(theme.FONT, 10), text_color=theme.MUTED, anchor="w")
-            sub.grid(row=1, column=1, sticky="w", pady=(0, 8))
-            self._dots[meta["name"]] = [dot, running]
+                card, text=f"{loader.split(' (')[0]}  ·  {meta['mc_version']}",
+                font=(theme.FONT, 10, "bold"), text_color=color, anchor="w",
+                height=16)
+            sub.grid(row=1, column=1, columnspan=2, sticky="w")
+            status = ctk.CTkLabel(
+                card, text=self._card_status(meta["name"]),
+                font=(theme.FONT, 10), text_color=theme.MUTED, anchor="w",
+                height=16)
+            status.grid(row=2, column=1, columnspan=2, sticky="w",
+                        pady=(0, 7))
+            self._dots[meta["name"]] = [dot, running, status]
             name = meta["name"]
-            for w in (card, lbl, sub, dot):
+            for w in (card, lbl, sub, dot, stripe, status):
                 w.bind("<Button-1>", lambda _e, m=meta: self._select(m))
                 w.bind("<Enter>", lambda _e, n=name: self._hover_card(n, True))
                 w.bind("<Leave>",
                        lambda _e, n=name: self._hover_card(n, False))
+
+    @staticmethod
+    def _card_status(name: str) -> str:
+        """« En ligne · 2 joueurs » / « Arrêté » sous le nom du serveur."""
+        p = sm.PROCESSES.get(name)
+        if p and p.is_running():
+            return t("srv_card_on", n=len(p.tracker.players))
+        if p and p._starting:
+            return t("srv_starting_short")
+        return t("srv_stopped")
 
     def _hover_card(self, name: str, entering: bool):
         """Survol d'une carte serveur non sélectionnée."""
@@ -449,6 +476,9 @@ class ServersTab(ctk.CTkFrame):
         acc = {"premium": t("acc_premium"), "crack": t("acc_crack")}.get(
             m.get("accounts"), t("acc_both"))
         loader = LOADER_LABELS.get(m["loader"], m["loader"])
+        self.loader_pill.configure(
+            text=f"  {loader.split(' (')[0]}  {m['mc_version']}  ",
+            fg_color=theme.LOADER_COLORS.get(m["loader"], theme.ACCENT))
         parts = [loader, f"MC {m['mc_version']}", acc]
         if m.get("crossplay"):
             parts.append("Java + Bedrock")
@@ -962,6 +992,9 @@ class ServersTab(ctk.CTkFrame):
                         slot[1] = on
                         slot[0].configure(text_color=theme.GREEN if on
                                           else theme.DISABLED)
+                    text = self._card_status(name)
+                    if slot[2].cget("text") != text:
+                        slot[2].configure(text=text)
             if self.proc and self.meta and (self.proc.meta.get("tunnels")
                                             != self._shown_tunnels):
                 self._ip_dirty = True           # tunnels Playit auto créés

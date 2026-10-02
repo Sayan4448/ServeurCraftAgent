@@ -63,6 +63,11 @@ class App(ctk.CTk):
                      text_color=theme.MUTED).pack(side="left", padx=8)
         ctk.CTkLabel(titles, text=t("header_sub"), font=(theme.FONT, 11),
                      text_color=theme.MUTED, anchor="w").pack(anchor="w")
+        # navigation entre les pages, au centre de l'en-tête
+        self.nav = ctk.CTkFrame(header, fg_color=theme.PANEL_2,
+                                corner_radius=12)
+        self.nav.pack(side="left", padx=(36, 0))
+        self._nav_btns: dict = {}
         tool = dict(height=34, fg_color=theme.PANEL_2,
                     hover_color=theme.HOVER, text_color=theme.TEXT,
                     font=(theme.FONT, 12))
@@ -83,21 +88,11 @@ class App(ctk.CTk):
         ctk.CTkFrame(self, height=1, fg_color=theme.BORDER,
                      corner_radius=0).pack(fill="x")
 
-        self.tabview = ctk.CTkTabview(
-            self, fg_color=theme.BG, corner_radius=10,
-            segmented_button_fg_color=theme.PANEL_2,
-            segmented_button_selected_color=theme.SEL,
-            segmented_button_selected_hover_color=theme.SEL_HOVER,
-            segmented_button_unselected_color=theme.PANEL_2,
-            segmented_button_unselected_hover_color=theme.HOVER,
-            text_color=theme.TEXT, anchor="nw",
-        )
-        self.tabview.pack(fill="both", expand=True, padx=12, pady=(6, 12))
-        self.tabview._segmented_button.configure(
-            font=(theme.FONT, 13, "bold"), height=34)
+        self.tabview = Pages(self)
+        self.tabview.pack(fill="both", expand=True, padx=12, pady=12)
 
-        self.tabview.add(t("tab_servers"))
-        self.tabview.add(t("tab_creator"))
+        self._add_page(t("tab_servers"), "list")
+        self._add_page(t("tab_creator"), "add")
 
         self.servers_tab = ServersTab(
             self.tabview.tab(t("tab_servers")),
@@ -113,11 +108,36 @@ class App(ctk.CTk):
         # Onglet Agent IA — bêta, activé dans les Paramètres
         if load_settings().get("ai_beta"):
             from .tab_ai import AiTab
-            self.tabview.add(t("tab_ai"))
+            self._add_page(t("tab_ai"), "robot")
             self.ai_tab = AiTab(self.tabview.tab(t("tab_ai")))
             self.ai_tab.pack(fill="both", expand=True)
 
+        self.show_tab(t("tab_servers"))
         self._bind_shortcuts()
+
+    def _add_page(self, name: str, icon: str):
+        self.tabview.add(name)
+        btn = ctk.CTkButton(
+            self.nav, height=32, corner_radius=10, width=0,
+            font=(theme.FONT, 13, "bold"), fg_color="transparent",
+            hover_color=theme.HOVER, text_color=theme.MUTED,
+            command=lambda: self.show_tab(name),
+            **theme.labelled(icon, name, "", 15, theme.MUTED))
+        btn.pack(side="left", padx=3, pady=3)
+        self._nav_btns[name] = (btn, icon)
+
+    def _nav_sync(self):
+        """Bouton de la page affichée en couleur d'accent."""
+        current = self.tabview.get()
+        for name, (btn, icon) in self._nav_btns.items():
+            on = name == current
+            color = theme.ON_ACCENT if on else theme.MUTED
+            btn.configure(fg_color=theme.ACCENT if on else "transparent",
+                          hover_color=theme.ACCENT_HOVER if on
+                          else theme.HOVER, text_color=color)
+            img = theme.icon(icon, 15, color)
+            if img is not None:
+                btn.configure(image=img)
 
     def _logo(self, parent):
         """Icône de l'app (assets/icon.png) ; pastille de repli sinon."""
@@ -163,17 +183,10 @@ class App(ctk.CTk):
                 self.bind(key, fn)
 
     def show_tab(self, name: str):
-        """Affiche un onglet. `CTkTabview.set()` masque les autres onglets
-        100 ms plus tard : deux changements rapprochés (raccourcis clavier)
-        laissaient la fenêtre vide — on vérifie donc après coup."""
-        if self.tabview.get() != name:
-            self.tabview.set(name)
-        self.after(160, self._ensure_tab_visible)
-
-    def _ensure_tab_visible(self):
-        current = self.tabview.get()
-        if not self.tabview.tab(current).winfo_ismapped():
-            self.tabview.set(current)
+        """Affiche une page (Mes serveurs, Créateur…) et met la navigation
+        de l'en-tête à jour."""
+        self.tabview.set(name)
+        self._nav_sync()
 
     def open_settings(self):
         SettingsDialog(self)
@@ -229,6 +242,45 @@ class App(ctk.CTk):
                 pass
 
 
+class Pages(ctk.CTkFrame):
+    """Pages de la fenêtre principale, une seule visible à la fois. Même
+    interface que CTkTabview (`add`, `tab`, `get`, `set`) sans sa barre
+    d'onglets (la navigation est dans l'en-tête) ni son masquage différé,
+    qui laissait la fenêtre vide après deux changements rapprochés."""
+
+    def __init__(self, master):
+        super().__init__(master, fg_color="transparent")
+        self.grid_rowconfigure(0, weight=1)
+        self.grid_columnconfigure(0, weight=1)
+        self._pages: dict = {}
+        self._current = ""
+
+    @property
+    def _name_list(self) -> list:
+        return list(self._pages)
+
+    def add(self, name: str):
+        page = ctk.CTkFrame(self, fg_color="transparent")
+        self._pages[name] = page
+        if not self._current:
+            self.set(name)
+        return page
+
+    def tab(self, name: str):
+        return self._pages[name]
+
+    def get(self) -> str:
+        return self._current
+
+    def set(self, name: str) -> None:
+        for n, page in self._pages.items():
+            if n == name:
+                page.grid(row=0, column=0, sticky="nsew")
+            else:
+                page.grid_remove()
+        self._current = name
+
+
 class SettingsDialog(ctk.CTkToplevel):
     """Paramètres : langue, thème, interface serveur, IA bêta, clé CurseForge,
     notifications Discord."""
@@ -273,6 +325,23 @@ class SettingsDialog(ctk.CTkToplevel):
             t("theme_light") if self.settings.get("theme") == "light"
             else t("theme_dark"))
         self.theme_seg.pack(side="left")
+
+        # couleur d'accent (appliquée au prochain lancement)
+        row = ctk.CTkFrame(card, fg_color="transparent")
+        row.pack(fill="x", padx=14, pady=6)
+        ctk.CTkLabel(row, text=t("accent"), width=140, anchor="w",
+                     text_color=theme.MUTED).pack(side="left")
+        self._accent = self.settings.get("accent", "blue")
+        self._accent_btns = {}
+        for name, (color, *_rest) in theme.ACCENTS.items():
+            b = ctk.CTkButton(row, text="", width=26, height=26,
+                              corner_radius=13, fg_color=color,
+                              hover_color=color, border_width=3,
+                              command=lambda n=name: self._pick_accent(n))
+            b.pack(side="left", padx=3)
+            Tooltip(b, t(f"accent_{name}"))
+            self._accent_btns[name] = b
+        self._pick_accent(self._accent)
         ctk.CTkLabel(card, text=t("restart_hint"), font=(theme.FONT, 10),
                      text_color=theme.MUTED).pack(anchor="w", padx=14)
 
@@ -474,6 +543,11 @@ class SettingsDialog(ctk.CTkToplevel):
             playit.unlink()
             self._pl_refresh()
 
+    def _pick_accent(self, name: str):
+        self._accent = name
+        for n, b in self._accent_btns.items():
+            b.configure(border_color=theme.TEXT if n == name else theme.PANEL)
+
     def _ai_toggled(self):
         if self.ai_switch.get():
             messagebox.showwarning(
@@ -501,8 +575,11 @@ class SettingsDialog(ctk.CTkToplevel):
                 self.settings["monitoring"])
         self.settings["ai_beta"] = bool(self.ai_switch.get())
         self.settings["curseforge_api_key"] = self.cf_entry.get().strip()
-        lang_changed = self.settings["language"] != \
-            load_settings().get("language")
+        before = load_settings()
+        self.settings["accent"] = self._accent
+        # langue et couleur d'accent : lues à la création des widgets
+        lang_changed = self.settings["language"] != before.get("language") \
+            or self._accent != before.get("accent", "blue")
         save_settings(self.settings)
         theme.apply(self.settings["theme"])       # appliqué immédiatement
         if hasattr(self.master, "_theme_icon"):

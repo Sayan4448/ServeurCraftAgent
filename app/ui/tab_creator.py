@@ -15,6 +15,70 @@ from .uithread import ui_call
 _LABEL_TO_LOADER = {v: k for k, v in downloader.LOADER_LABELS.items()}
 
 
+class LoaderPicker(ctk.CTkFrame):
+    """Choix du type de serveur en cartes (couleur, nom, usage) au lieu d'une
+    liste déroulante. Même interface que CTkOptionMenu pour le formulaire :
+    `get()` / `set()` sur les libellés de LOADER_LABELS, `configure(state=)`."""
+
+    def __init__(self, master, command=None):
+        super().__init__(master, fg_color="transparent")
+        self.command = command
+        self._value = downloader.LOADER_LABELS[downloader.LOADERS[0]]
+        self._enabled = True
+        self._cards = {}
+        for i, key in enumerate(downloader.LOADERS):
+            label = downloader.LOADER_LABELS[key]
+            color = theme.LOADER_COLORS.get(key, theme.ACCENT)
+            card = ctk.CTkFrame(self, corner_radius=10, border_width=1,
+                                fg_color=theme.PANEL_2,
+                                border_color=theme.BORDER, cursor="hand2")
+            card.grid(row=i // 3, column=i % 3, sticky="ew", padx=3, pady=3)
+            dot = ctk.CTkLabel(card, text="●", width=14, text_color=color,
+                               font=(theme.FONT, 14))
+            dot.grid(row=0, column=0, rowspan=2, padx=(10, 6))
+            name = ctk.CTkLabel(card, text=label.split(" (")[0],
+                                font=(theme.FONT, 12, "bold"),
+                                text_color=theme.TEXT, anchor="w", height=18)
+            name.grid(row=0, column=1, sticky="w", pady=(7, 0), padx=(0, 8))
+            sub = ctk.CTkLabel(card, text=t(f"ld_{key}"),
+                               font=(theme.FONT, 10), text_color=theme.MUTED,
+                               anchor="w", height=16)
+            sub.grid(row=1, column=1, sticky="w", pady=(0, 7), padx=(0, 8))
+            for w in (card, dot, name, sub):
+                w.bind("<Button-1>", lambda _e, v=label: self._click(v))
+            self._cards[label] = card
+        self.grid_columnconfigure((0, 1, 2), weight=1, uniform="ld")
+        self._paint()
+
+    def _click(self, value):
+        if self._enabled and value != self._value:
+            self.set(value)
+            if self.command:
+                self.command(value)
+
+    def _paint(self):
+        for label, card in self._cards.items():
+            on = label == self._value
+            card.configure(border_color=theme.ACCENT if on else theme.BORDER,
+                           border_width=2 if on else 1,
+                           fg_color=theme.SEL if on and self._enabled
+                           else theme.PANEL_2)
+
+    def get(self) -> str:
+        return self._value
+
+    def set(self, value: str) -> None:
+        self._value = value
+        self._paint()
+
+    def configure(self, require_redraw=False, **kwargs):
+        if "state" in kwargs:
+            self._enabled = kwargs.pop("state") != "disabled"
+            self._paint()
+        if kwargs:
+            super().configure(require_redraw, **kwargs)
+
+
 class CreatorTab(ctk.CTkFrame):
     def __init__(self, master, on_created=None):
         super().__init__(master, fg_color="transparent")
@@ -78,12 +142,9 @@ class CreatorTab(ctk.CTkFrame):
         self.name_entry.grid(row=1, column=1, sticky="ew", padx=16, pady=6)
 
         label(2, t("cre_type"))
-        self.loader_menu = ctk.CTkOptionMenu(
-            form, values=list(downloader.LOADER_LABELS.values()),
-            fg_color=theme.PANEL_2, button_color=theme.ACCENT,
-            button_hover_color=theme.ACCENT_HOVER, text_color=theme.TEXT,
-            command=lambda _v: self._load_versions())
-        self.loader_menu.grid(row=2, column=1, sticky="ew", padx=16, pady=6)
+        self.loader_menu = LoaderPicker(
+            form, command=lambda _v: self._load_versions())
+        self.loader_menu.grid(row=2, column=1, sticky="ew", padx=13, pady=4)
 
         label(3, t("cre_version"))
         self.version_menu = ctk.CTkOptionMenu(
