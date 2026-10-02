@@ -422,6 +422,7 @@ class ServerProcess:
         self.exit_code = None
         self._starting = False       # démarrage en cours (Java, Popen…)
         self._geyser = None          # process Geyser Standalone
+        self._viaproxy = None        # process ViaProxy (traduction de version)
         self._java = None
         self.ready = False
         self._ps = None              # psutil.Process (stats)
@@ -628,20 +629,35 @@ class ServerProcess:
     # ------------------------------------------------ proxy Bedrock (Geyser)
     def _start_geyser(self) -> None:
         """Lance Geyser Standalone une fois le serveur prêt (clé Floodgate
-        générée). Ses lignes arrivent dans la console préfixées [Bedrock]."""
+        générée), derrière ViaProxy si le serveur ne peut pas traduire les
+        versions lui-même. Ses lignes arrivent dans la console préfixées
+        [Bedrock]."""
         try:
             gdir = crossplay.geyser_dir(self.path)
-            for orphan in find_orphans(gdir):
-                orphan.kill()
+            for d in (gdir, gdir / crossplay.VIAPROXY_DIR):
+                for orphan in find_orphans(d):
+                    orphan.kill()
+            java = crossplay.proxy_java(self.log)
+            crossplay.update_geyser(self.path, self.log)
             if not (gdir / "config.yml").exists():
                 self.log("── Cross-play : première configuration de Geyser… ──")
-                crossplay._generate_config(gdir, self._java)
-            auth = crossplay.configure(self.path,
-                                       int(self.meta.get("port", 25565)),
-                                       self.meta.get("accounts", "both"))
+                crossplay._generate_config(gdir, java)
+            port = int(self.meta.get("port", 25565))
+            accounts = self.meta.get("accounts", "both")
+            proxy = crossplay.needs_proxy(self.path,
+                                          self.meta.get("loader", ""),
+                                          self.meta.get("mc_version", ""))
+            if proxy:
+                self.log(t("cp_proxy_start",
+                           ver=self.meta.get("mc_version", "")))
+                if accounts == "premium":
+                    self.log(t("cp_proxy_premium"))
+                self._viaproxy, port = crossplay.launch_viaproxy(
+                    self.path, java, port)
+            auth = crossplay.configure(self.path, port, accounts, proxy=proxy)
             self.log(f"── Cross-play : démarrage du proxy Bedrock "
                      f"(UDP {crossplay.BEDROCK_PORT}, auth {auth}) ──")
-            self._geyser = crossplay.launch(self.path, self._java)
+            self._geyser = crossplay.launch(self.path, java)
             threading.Thread(target=self._geyser_reader,
                              args=(self._geyser,), daemon=True).start()
         except Exception as e:  # noqa: BLE001
@@ -665,6 +681,9 @@ class ServerProcess:
                 gp.wait(8)
             except Exception:  # noqa: BLE001
                 gp.kill()
+        vp, self._viaproxy = self._viaproxy, None
+        if vp and vp.poll() is None:
+            vp.kill()
 
     def _player_event(self, kind: str, player: str) -> None:
         discord.notify(kind, self.name, player=player)
