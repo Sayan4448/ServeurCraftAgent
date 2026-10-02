@@ -48,40 +48,49 @@ windows
 GitHub accepte 20 topics au plus. N'ajoute `open-source` qu'une fois un
 fichier `LICENSE` présent dans le dépôt.
 
-## Release v1.30.0
+## Release v1.0.0
 
-**Titre** : `ServerCraft Agent 1.30.0`
+**Titre** : `ServerCraft Agent 1.0.0 Beta`
 
-**Tag** : `v1.30.0` (sur le commit de la branche fusionnée dans `main`)
+**Tag** : `v1.0.0` (sur le commit de `main` après fusion). Les anciennes
+releases 1.0.0 et 1.30.0 ont été renommées v0.8.0 et v0.9.0.
 
 **Texte**
 
-> ## ServerCraft Agent 1.30.0
+> ## ServerCraft Agent 1.0.0 Beta
 >
-> Version centrée sur la fiabilité : une vingtaine de corrections, une
-> interface plus nette et quelques outils pour les administrateurs.
+> Première version stable : les gros bugs signalés sont corrigés, et
+> l'inventaire devient un vrai mode créatif.
 >
-> ### À retenir
-> - **Inventaire des joueurs** : « Retirer » vise enfin la bonne case, et
->   on peut déplacer les objets par glisser-déposer, joueur connecté ou
->   non. Chaque modification est vérifiée auprès du serveur.
-> - **Console** : historique des commandes (↑ ↓), filtre, copie.
-> - **Whitelist** dans le panneau joueurs, serveur lancé ou arrêté.
-> - **Dupliquer un serveur** sur un port libre, pour tester sans risque.
-> - **Port déjà utilisé** : signalé avant le lancement.
-> - **Interface** : vraies icônes, notifications, raccourcis clavier, aide
->   (F1).
-> - **Mods et plugins** : une nouvelle version remplace l'ancienne au lieu
->   de créer un doublon ; erreurs CurseForge expliquées clairement.
+> ### Corrigé
+> - **Bedrock « version incompatible »** sur Forge, NeoForge et les
+>   anciennes versions : ViaProxy traduit maintenant la version entre
+>   Geyser et le serveur. Geyser se met à jour à chaque démarrage.
+> - **Crash avec les comptes crack sur les dernières versions** (Fabric) :
+>   les dépendances obligatoires des mods (ViaFabric, Fabric API…) sont
+>   installées avec eux, et plus aucun jar d'un autre loader n'est posé.
+> - **Playit.gg** : les tunnels se créent enfin.
+> - **Anciennes versions** : le bon Java pour chaque version de Minecraft,
+>   et pas de plugin trop récent pour lui.
+> - **Mods client** écartés de la recherche et de l'installation.
+>
+> ### Nouveau
+> - **Donner un objet comme en créatif** : catalogue de tous les objets du
+>   jeu et des mods installés, avec textures et noms traduits.
+> - **Vérifier les mods** : repère et désactive (sans supprimer) les
+>   fichiers qui empêchent le serveur de démarrer.
+> - **Interface refaite** : navigation dans l'en-tête, types de serveur en
+>   cartes, couleur de l'interface au choix.
 >
 > Détail complet dans le [CHANGELOG](CHANGELOG.md).
 >
 > ### Installation
-> Télécharge `ServerCraftAgent-1.30.0-win64.msi` ci-dessous et
-> double-clique : aucun droit administrateur requis. Tes serveurs et
-> réglages existants sont conservés.
+> Télécharge `ServerCraftAgent-1.0.0-win64.msi` ci-dessous et
+> double-clique : aucun droit administrateur requis. Il remplace une
+> version déjà installée (même numérotée 1.30.0) ; tes serveurs et
+> réglages sont conservés.
 >
 > Windows 10 et 11.
 
-**Fichier à joindre** : `dist/ServerCraftAgent-1.30.0-win64.msi`
+**Fichier à joindre** : `dist/ServerCraftAgent-1.0.0-win64.msi`
 (`python setup.py bdist_msi`).

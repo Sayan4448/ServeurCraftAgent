@@ -8,7 +8,7 @@ from pathlib import Path
 import customtkinter as ctk
 from tkinter import messagebox
 
-from .. import __version__
+from .. import __channel__, __version__
 from ..config import APP_DIR, curseforge_key, load_settings, save_settings
 from ..core import discord, playit
 from ..core import mods as mods_mod
@@ -22,6 +22,7 @@ from .tab_creator import CreatorTab
 
 
 REPO_URL = "https://github.com/Sayan4448/ServeurCraftAgent"
+VERSION_LABEL = f"v{__version__} {__channel__}".strip()
 
 
 def _install_dir() -> Path:
@@ -57,7 +58,7 @@ class App(ctk.CTk):
         ctk.CTkLabel(name_row, text="ServerCraft Agent",
                      font=(theme.FONT, 17, "bold"), text_color=theme.TEXT,
                      anchor="w").pack(side="left")
-        ctk.CTkLabel(name_row, text=f"v{__version__}", height=18,
+        ctk.CTkLabel(name_row, text=VERSION_LABEL, height=18,
                      corner_radius=9, fg_color=theme.PANEL_2,
                      font=(theme.FONT, 10, "bold"),
                      text_color=theme.MUTED).pack(side="left", padx=8)
@@ -657,7 +658,7 @@ class HelpDialog(ctk.CTkToplevel):
                       ).pack(anchor="w", padx=14, pady=(8, 0))
 
         section(t("help_about"))
-        ctk.CTkLabel(body, text=f"ServerCraft Agent  v{__version__}",
+        ctk.CTkLabel(body, text=f"ServerCraft Agent  {VERSION_LABEL}",
                      font=(theme.FONT, 13, "bold"), text_color=theme.TEXT,
                      anchor="w").pack(fill="x", padx=14)
         ctk.CTkLabel(body, text=t("help_privacy"), font=(theme.FONT, 11),
