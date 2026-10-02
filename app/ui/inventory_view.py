@@ -7,7 +7,6 @@ façon jeu, clic = sélection du slot (callback `on_select`).
 import colorsys
 import tkinter as tk
 
-import customtkinter as ctk
 from PIL import Image, ImageDraw, ImageTk
 
 from ..core import item_icons

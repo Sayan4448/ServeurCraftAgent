@@ -7,7 +7,7 @@ import requests
 
 from ..i18n import t
 from .downloader import MOD_LOADERS, PLUGIN_LOADERS, download_file
-from .properties import load_properties, save_properties, update_properties
+from .properties import load_properties, save_properties
 
 MODRINTH_API = "https://api.modrinth.com/v2"
 CURSEFORGE_API = "https://api.curseforge.com/v1"
