@@ -285,8 +285,9 @@ def _items(data, key: str):
 
 
 def set_item(data, slot: int, item_id: str, count: int = 1) -> None:
-    """Pose un item dans un slot (écriture NBT hors-ligne)."""
-    if not item_id.startswith("minecraft:"):
+    """Pose un item dans un slot (écriture NBT hors-ligne). Sans espace de
+    noms : objet de Minecraft ; ceux des mods gardent le leur."""
+    if ":" not in item_id:
         item_id = "minecraft:" + item_id
     count = max(1, min(int(count), 99))
     inv_list = _items(data, "Inventory")
@@ -482,7 +483,7 @@ def move_commands(player: str, src: int, dst: int, ender: bool,
 def give_item(data, item_id: str, count: int = 1) -> int:
     """Donne un item : premier slot libre, sinon pile existante (hors-ligne).
     Retourne le slot utilisé (-1 si inventaire plein)."""
-    if not item_id.startswith("minecraft:"):
+    if ":" not in item_id:            # les objets de mods gardent leur préfixe
         item_id = "minecraft:" + item_id
     inv = inventory(data)["inv"]
     free = next((s for s in range(36) if s not in inv), None)

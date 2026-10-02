@@ -230,3 +230,16 @@ def test_ask_returns_the_server_answer(running_proc):
 def test_ask_gives_up_without_answer(running_proc):
     proc = running_proc()
     assert proc.ask("item replace …", re.compile("Replaced"), 0.2) is None
+
+
+def test_modded_item_keeps_its_namespace_offline():
+    """Le catalogue donne aussi les objets des mods : `create:wrench` ne
+    doit pas devenir `minecraft:create:wrench` dans le .dat."""
+    import nbtlib
+    from app.core import playerdata as pd
+    data = nbtlib.Compound({"Inventory": nbtlib.List[nbtlib.Compound]()})
+    assert pd.give_item(data, "farmersdelight:apple_pie", 16) == 0
+    assert pd.give_item(data, "stone") == 1
+    inv = pd.inventory(data)["inv"]
+    assert (inv[0]["id"], inv[0]["count"]) == ("farmersdelight:apple_pie", 16)
+    assert inv[1]["id"] == "minecraft:stone"

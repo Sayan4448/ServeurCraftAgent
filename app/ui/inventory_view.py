@@ -173,6 +173,8 @@ class InventoryView(tk.Canvas):
         self.player_img = None
         self.selected = None
         self.icons_root = None
+        self.icons_extra: dict = {}   # {mod: dossier de ses textures}
+        self.names: dict = {}         # {id: nom affiché}
         self._icons: dict = {}
         self._k = 2
         self._origin = (0, 0)
@@ -201,14 +203,17 @@ class InventoryView(tk.Canvas):
         self.player_img = img
         self.redraw()
 
-    def set_textures(self, root) -> None:
+    def set_textures(self, root, extra=None, names=None) -> None:
         self.icons_root = root
+        self.icons_extra = extra or {}
+        self.names = names or {}
         self._icons.clear()
         self.redraw()
 
     def icons(self, k: int) -> item_icons.Icons:
         if k not in self._icons:
-            self._icons[k] = item_icons.Icons(self.icons_root, 16 * k)
+            self._icons[k] = item_icons.Icons(self.icons_root, 16 * k,
+                                              extra=self.icons_extra)
         return self._icons[k]
 
     def image(self, k: int = 4) -> Image.Image:
@@ -339,8 +344,8 @@ class InventoryView(tk.Canvas):
         self.delete("tip")
         if not it:
             return
-        lines = [(item_title(it) + (f"  ×{it['count']}"
-                                    if it["count"] > 1 else ""),
+        title = it.get("name") or self.names.get(it["id"]) or item_title(it)
+        lines = [(title + (f"  ×{it['count']}" if it["count"] > 1 else ""),
                   "#55ffff" if it.get("enchants") else "#ffffff")]
         lines += [(enchant_label(e, lv), "#aaaaaa")
                   for e, lv in it.get("enchants", [])]
