@@ -7,14 +7,19 @@ ServerCraft Agent télécharge le serveur, Java et les mods à ta place, puis te
 donne un tableau de bord pour tout piloter : console, joueurs, inventaires,
 sauvegardes, tunnels pour jouer avec des amis sans ouvrir de port.
 
-![Tableau de bord d'un serveur lancé](docs/screenshots/serveurs.png)
+![Tableau de bord d'un serveur](docs/screenshots/serveurs.png)
 
-| Inventaire d'un joueur | Créateur de serveur | Thème clair |
-|---|---|---|
-| ![Inventaire](docs/screenshots/inventaire.png) | ![Créateur](docs/screenshots/createur.png) | ![Thème clair](docs/screenshots/theme-clair.png) |
+| Donner un objet (mods compris) | Inventaire d'un joueur |
+|---|---|
+| ![Catalogue d'objets](docs/screenshots/catalogue.png) | ![Inventaire](docs/screenshots/inventaire.png) |
+
+| Créateur de serveur | Thème clair |
+|---|---|
+| ![Créateur](docs/screenshots/createur.png) | ![Thème clair](docs/screenshots/theme-clair.png) |
 
 > Les captures sont dans `docs/screenshots/` (`serveurs.png`,
-> `inventaire.png`, `createur.png`, `theme-clair.png`). Pour les remplacer,
+> `catalogue.png`, `inventaire.png`, `createur.png`, `theme-clair.png`).
+> Elles ne contiennent que des données fictives. Pour les remplacer,
 > dépose une image du même nom au même endroit.
 
 ## En bref
