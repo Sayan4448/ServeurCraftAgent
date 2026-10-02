@@ -25,8 +25,8 @@ VOICE_LABELS = {
 
 # Catégories Modrinth selon le loader (ordre = préférence).
 LOADER_MAP = {
-    "paper": ["paper", "bukkit"],
-    "purpur": ["purpur", "paper", "bukkit"],
+    "paper": ["paper", "spigot", "bukkit"],
+    "purpur": ["purpur", "paper", "spigot", "bukkit"],
     "fabric": ["fabric"],
     "forge": ["forge"],
     "neoforge": ["neoforge"],
@@ -217,12 +217,10 @@ def search_modrinth(query: str, loader: str, mc_version: str,
     facets = [["project_type:" + ("plugin" if kind == "plugin" else "mod")]]
     if mc_version:
         facets.append(["versions:" + mc_version])
-    loaders = LOADER_MAP.get(loader, [loader])
-    # mohist : mods = forge ; plugins = bukkit/paper
-    if loader == "mohist":
-        loaders = ["forge"] if kind == "mod" else ["bukkit", "paper", "spigot"]
+    loaders = _loaders_for(loader, kind)
     # Modrinth : éléments d'une même sous-liste = OU logique
     facets.append([f"categories:{l}" for l in loaders])
+    facets.append(["server_side!=unsupported"])   # pas de mod 100 % client
     r = requests.get(
         f"{MODRINTH_API}/search",
         params={
@@ -245,48 +243,96 @@ def search_modrinth(query: str, loader: str, mc_version: str,
 
 
 def _modrinth_versions(project: str, loaders: list, mc_version: str) -> list:
-    params = {
-        "loaders": json.dumps(loaders),
-        "game_versions": json.dumps([mc_version]),
-    }
+    """Versions du projet pour ce loader ET cette version de Minecraft.
+    Aucun repli sur un autre loader : un jar Fabric ou Paper posé dans un
+    serveur Forge l'empêche de démarrer."""
     r = requests.get(
         f"{MODRINTH_API}/project/{project}/version",
-        params=params, headers=_UA, timeout=30,
+        params={"loaders": json.dumps(loaders),
+                "game_versions": json.dumps([mc_version])},
+        headers=_UA, timeout=30,
     )
     r.raise_for_status()
-    versions = r.json()
-    if not versions and loaders:
-        params.pop("loaders")
-        r = requests.get(
-            f"{MODRINTH_API}/project/{project}/version",
-            params=params, headers=_UA, timeout=30,
-        )
+    return r.json()
+
+
+def _loaders_for(loader: str, kind: str) -> list:
+    # mohist : mods = forge ; plugins = bukkit/paper
+    if loader == "mohist":
+        return ["forge"] if kind == "mod" else ["bukkit", "paper", "spigot"]
+    return LOADER_MAP.get(loader, [loader])
+
+
+def _required_deps(version: dict) -> list:
+    return [str(d["project_id"]) for d in version.get("dependencies") or []
+            if d.get("dependency_type") == "required" and d.get("project_id")]
+
+
+def _install_deps(deps: list, parent: str, dest: Path, server_dir: Path,
+                  loader: str, mc_version: str, kind: str, seen: set,
+                  replaced: list | None, log=None) -> None:
+    """Installe les dépendances obligatoires absentes. Si l'une d'elles est
+    introuvable, `dest` est retiré : le mod seul ferait planter le serveur."""
+    have = _installed_projects(server_dir)
+    for pid in deps:
+        if pid in seen or pid in have:
+            continue
+        try:
+            got = install_modrinth(pid, server_dir, loader, mc_version, kind,
+                                   replaced=replaced, _seen=seen, log=log)
+        except (ModError, requests.RequestException) as e:
+            dest.unlink(missing_ok=True)
+            raise ModError(t("mod_err_dep", name=parent,
+                             e=explain(e))) from e
+        if log:
+            log(t("mod_dep_added", name=got.name))
+
+
+def _installed_projects(server_dir: Path) -> set:
+    return {str(info.get("project")) for rel, info in
+            _manifest(server_dir).items() if (Path(server_dir) / rel).exists()}
+
+
+def _server_side(project: str) -> str:
+    """`server_side` du projet Modrinth ("" si inconnu ou injoignable)."""
+    try:
+        r = requests.get(f"{MODRINTH_API}/project/{project}", headers=_UA,
+                         timeout=15)
         r.raise_for_status()
-        versions = r.json()
-    return versions
+        return str(r.json().get("server_side") or "")
+    except (requests.RequestException, ValueError):
+        return ""
 
 
 def install_modrinth(project_slug: str, server_dir: Path, loader: str,
                      mc_version: str, kind: str, progress_cb=None,
-                     replaced: list | None = None) -> Path:
-    """Installe la dernière version compatible (release de préférence).
+                     replaced: list | None = None, _seen: set | None = None,
+                     log=None) -> Path:
+    """Installe la dernière version compatible (release de préférence) et
+    ses dépendances obligatoires (ViaFabric pour ViaVersion, Fabric API…) :
+    sans elles le serveur refuse de démarrer.
     `replaced` : liste complétée avec les anciennes versions retirées."""
-    loaders = LOADER_MAP.get(loader, [loader])
-    if loader == "mohist":
-        loaders = ["forge"] if kind == "mod" else ["bukkit", "paper", "spigot"]
-    versions = _modrinth_versions(project_slug, loaders, mc_version)
+    versions = _modrinth_versions(project_slug, _loaders_for(loader, kind),
+                                  mc_version)
     if not versions:
-        raise ModError(f"{project_slug} : aucune version pour {mc_version}")
+        raise ModError(t("mod_err_noversion", name=project_slug,
+                         loader=loader, mc=mc_version))
     version = _best_version(versions)
     jar = _pick_jar(version.get("files", []))
     if not jar:
         raise ModError(f"{project_slug} : aucun fichier .jar téléchargeable")
+    project = str(version.get("project_id") or project_slug)
+    seen = _seen if _seen is not None else set()
+    if _seen is None and kind == "mod" and             _server_side(project) == "unsupported":
+        raise ModError(t("mod_err_client", name=project_slug))
+    seen.add(project)
     dest = target_dir(server_dir, loader, kind) / jar["filename"]
     download_file(jar["url"], dest, progress_cb)
-    old = record_install(server_dir, dest, "modrinth",
-                         version.get("project_id") or project_slug)
+    old = record_install(server_dir, dest, "modrinth", project)
     if replaced is not None:
         replaced += old
+    _install_deps(_required_deps(version), project_slug, dest, server_dir,
+                  loader, mc_version, kind, seen, replaced, log)
     return dest
 
 
@@ -465,11 +511,9 @@ def modrinth_version_list(project_slug: str, loader: str,
     """Toutes les versions d'un projet compatibles loader/MC, plus récentes
     d'abord. Chaque entrée : name, date, game_versions, release_type, url,
     filename."""
-    loaders = LOADER_MAP.get(loader, [loader])
-    if loader == "mohist":
-        loaders = ["forge"] if kind == "mod" else ["bukkit", "paper", "spigot"]
     out = []
-    for v in _modrinth_versions(project_slug, loaders, mc_version):
+    for v in _modrinth_versions(project_slug, _loaders_for(loader, kind),
+                                mc_version):
         jar = _pick_jar(v.get("files", []))
         if not jar:
             continue
@@ -480,6 +524,7 @@ def modrinth_version_list(project_slug: str, loader: str,
             "game_versions": ", ".join(v["game_versions"]),
             "release_type": v.get("version_type", "release"),
             "url": jar["url"], "filename": jar["filename"],
+            "deps": _required_deps(v),
         })
     return out
 
@@ -521,9 +566,12 @@ def version_list(result: dict, loader: str, mc_version: str,
 
 def download_to(url: str, filename: str, server_dir: Path, loader: str,
                 kind: str, progress_cb=None, result: dict | None = None,
-                replaced: list | None = None) -> Path:
+                replaced: list | None = None, deps: list | None = None,
+                mc_version: str = "") -> Path:
     """Télécharge une version précise. `result` (résultat de recherche) :
-    permet de remplacer la version déjà installée du même projet."""
+    permet de remplacer la version déjà installée du même projet.
+    `deps` : projets Modrinth obligatoires de cette version, installés s'ils
+    manquent (pour `mc_version`)."""
     dest = target_dir(server_dir, loader, kind) / filename
     download_file(url, dest, progress_cb)
     if result:
@@ -531,6 +579,10 @@ def download_to(url: str, filename: str, server_dir: Path, loader: str,
                              result["id"])
         if replaced is not None:
             replaced += old
+    if deps and mc_version:
+        _install_deps(deps, filename, dest, server_dir, loader, mc_version,
+                      kind, {str(result["id"])} if result else set(),
+                      replaced)
     return dest
 
 
@@ -546,7 +598,8 @@ def install_voice_mod(
     """Télécharge le plugin/mod Voice Chat dans plugins/ ou mods/."""
     project = VOICE_PROJECTS[which]
     kind = "plugin" if loader in ("paper", "purpur") else "mod"
-    versions = _modrinth_versions(project, LOADER_MAP[loader], mc_version)
+    versions = _modrinth_versions(project, _loaders_for(loader, kind),
+                                  mc_version)
     if not versions:
         raise ModError(
             f"{VOICE_LABELS[which]} : aucune version trouvée pour {loader} {mc_version}"

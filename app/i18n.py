@@ -2860,6 +2860,35 @@ _V130 = {
         "Playit がこの PC のエージェントをまだ認識していません。1 分後にもう一度試してください。続く場合は ⚙ 設定でアカウントの連携を解除して再連携してください。",
         "Playit aún no ha reconocido el agente de este PC. Inténtalo de nuevo en un minuto; si sigue fallando, desvincula y vuelve a vincular la cuenta en ⚙ Ajustes.",
         "Playit hat den Agenten dieses PCs noch nicht erkannt. In einer Minute erneut versuchen; falls es weiter fehlschlägt, das Konto in ⚙ Einstellungen trennen und neu verbinden."),
+    # mods : compatibilité et dépendances
+    "mod_err_noversion": (
+        "{name} : aucune version pour {loader} {mc}.",
+        "{name}: no version for {loader} {mc}.",
+        "{name}: нет версии для {loader} {mc}.",
+        "{name}：{loader} {mc} 用のバージョンがありません。",
+        "{name}: ninguna versión para {loader} {mc}.",
+        "{name}: keine Version für {loader} {mc}."),
+    "mod_err_client": (
+        "{name} est un mod 100 % client : il ne s'installe pas sur un serveur.",
+        "{name} is a client-only mod: it cannot be installed on a server.",
+        "{name} — только клиентский мод: на сервер он не ставится.",
+        "{name} はクライアント専用 MOD のため、サーバーにはインストールできません。",
+        "{name} es un mod solo de cliente: no se instala en un servidor.",
+        "{name} ist eine reine Client-Mod und kann nicht auf einem Server installiert werden."),
+    "mod_err_dep": (
+        "{name} non installé : une dépendance obligatoire est introuvable ({e})",
+        "{name} not installed: a required dependency is missing ({e})",
+        "{name} не установлен: не найдена обязательная зависимость ({e})",
+        "{name} はインストールされませんでした：必須の依存関係が見つかりません（{e}）",
+        "{name} no instalado: falta una dependencia obligatoria ({e})",
+        "{name} nicht installiert: eine erforderliche Abhängigkeit fehlt ({e})"),
+    "mod_dep_added": (
+        "  + dépendance installée : {name}",
+        "  + dependency installed: {name}",
+        "  + установлена зависимость: {name}",
+        "  + 依存関係をインストール：{name}",
+        "  + dependencia instalada: {name}",
+        "  + Abhängigkeit installiert: {name}"),
 }
 for _key, _vals in _V130.items():
     for _lang, _text in zip(LANGS, _vals):

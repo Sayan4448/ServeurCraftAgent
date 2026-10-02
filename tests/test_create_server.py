@@ -64,7 +64,7 @@ def test_default_creation(fake_network):
     assert [p.name for p in (path / "plugins").iterdir()] == \
         ["authmereloaded-1.0.jar"]
     assert fake_network["modrinth"] == [
-        ("authmereloaded", ("paper", "bukkit"), "26.3")]
+        ("authmereloaded", ("paper", "spigot", "bukkit"), "26.3")]
     assert not (path / "mods").exists()
     # métadonnées sur disque, sans champ volatil
     disk = json.loads((path / sm.META_FILE).read_text("utf-8"))

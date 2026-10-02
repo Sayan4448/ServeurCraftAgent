@@ -332,7 +332,8 @@ class ModsManager(ctk.CTkToplevel):
                 path = mods_mod.download_to(
                     version["url"], version["filename"], self.server_dir,
                     self.meta["loader"], result["kind"], result=result,
-                    replaced=replaced)
+                    replaced=replaced, deps=version.get("deps"),
+                    mc_version=self.meta["mc_version"])
                 ui_call(self, self._installed, path, replaced, btn, "✔")
             except Exception as e:  # noqa: BLE001
                 ui_call(self, self._install_failed, btn, mods_mod.explain(e))
