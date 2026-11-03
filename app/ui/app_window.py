@@ -8,7 +8,7 @@ from pathlib import Path
 import customtkinter as ctk
 from tkinter import messagebox
 
-from .. import __channel__, __version__
+from .. import __channel__, __display_version__
 from ..config import APP_DIR, curseforge_key, load_settings, save_settings
 from ..core import discord, playit
 from ..core import mods as mods_mod
@@ -22,7 +22,7 @@ from .tab_creator import CreatorTab
 
 
 REPO_URL = "https://github.com/Sayan4448/ServeurCraftAgent"
-VERSION_LABEL = f"v{__version__} {__channel__}".strip()
+VERSION_LABEL = f"v{__display_version__} {__channel__}".strip()
 
 
 def _install_dir() -> Path:
