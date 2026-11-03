@@ -106,6 +106,10 @@ class AiTab(ctk.CTkFrame):
             **_ENTRY_STYLE)
         self.rules_entry.insert(0, self.settings.get("auto_mod_rules", ""))
         self.rules_entry.pack(side="left", padx=12)
+        ctk.CTkButton(auto, text=t("oc_open"), width=0,
+                      fg_color=theme.PANEL_2, hover_color=theme.HOVER,
+                      text_color=theme.TEXT,
+                      command=self._open_opencode).pack(side="right")
 
         # ------------------------------------------------------------- chat
         self.chat_frame = ctk.CTkScrollableFrame(self, fg_color=theme.PANEL,
@@ -269,6 +273,10 @@ class AiTab(ctk.CTkFrame):
             self.auto_switch.select()
         else:
             self.auto_switch.deselect()
+
+    def _open_opencode(self):
+        from .opencode_terminal import OpenCodeTerminal
+        OpenCodeTerminal.show(self.winfo_toplevel())
 
     def _toggle_autonomy(self):
         name = self.server_menu.get()

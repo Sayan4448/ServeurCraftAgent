@@ -387,6 +387,14 @@ class SettingsDialog(ctk.CTkToplevel):
         ctk.CTkLabel(card, text=t("ai_beta_hint"), font=(theme.FONT, 10),
                      text_color=theme.MUTED, wraplength=440,
                      justify="left").pack(anchor="w", padx=14, pady=(0, 8))
+        # terminal OpenCode (modèles gratuits, outils serveur + tunnels)
+        ctk.CTkButton(card, text=t("oc_open"), width=0, height=30,
+                      fg_color=theme.PANEL_2, hover_color=theme.HOVER,
+                      text_color=theme.TEXT,
+                      command=self._open_opencode).pack(anchor="w", padx=14)
+        ctk.CTkLabel(card, text=t("oc_open_hint"), font=(theme.FONT, 10),
+                     text_color=theme.MUTED, wraplength=440,
+                     justify="left").pack(anchor="w", padx=14, pady=(2, 8))
 
         # clé curseforge
         row = ctk.CTkFrame(card, fg_color="transparent")
@@ -548,6 +556,11 @@ class SettingsDialog(ctk.CTkToplevel):
         self._accent = name
         for n, b in self._accent_btns.items():
             b.configure(border_color=theme.TEXT if n == name else theme.PANEL)
+
+    def _open_opencode(self):
+        from .opencode_terminal import OpenCodeTerminal
+        self.grab_release()       # sinon la fenêtre modale bloque le terminal
+        OpenCodeTerminal.show(self.master)
 
     def _ai_toggled(self):
         if self.ai_switch.get():
