@@ -25,6 +25,18 @@
   `voice_host` par-dessus l'adresse du tunnel
 - Serveur dupliqué : il n'annonce plus l'adresse vocale de l'original
 
+**Nouveau**
+- **Terminal OpenCode** (⚙ Paramètres, sous « Agent IA », et dans
+  l'onglet Agent IA) : on écrit une demande, une IA gratuite d'OpenCode
+  (sans clé API) s'occupe du serveur choisi. Elle peut le démarrer et
+  l'arrêter, lire les erreurs, modifier les configs, installer des mods,
+  envoyer des commandes et créer les tunnels Playit. OpenCode est
+  téléchargé tout seul au premier lancement. « Ouvrir OpenCode complet »
+  ouvre son interface entière (connexion à d'autres fournisseurs, choix
+  du modèle). Les outils passent par un petit serveur local
+  (127.0.0.1, protégé par un jeton) qui n'existe que tant que la fenêtre
+  est ouverte
+
 **Publication**
 - Le MSI est compilé et publié par GitHub (Windows) dès que la version
   change : plus besoin d'un PC pour sortir une version

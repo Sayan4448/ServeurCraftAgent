@@ -99,7 +99,11 @@ def write_config(url: str, token: str, instructions: str) -> Path:
 
 
 def _env(cfg: Path) -> dict:
-    return {**os.environ, "OPENCODE_CONFIG": str(cfg)}
+    # un proxy système ne doit pas intercepter le pont MCP local
+    no_proxy = ",".join(filter(None, (os.environ.get("NO_PROXY"),
+                                      "127.0.0.1,localhost")))
+    return {**os.environ, "OPENCODE_CONFIG": str(cfg),
+            "NO_PROXY": no_proxy, "no_proxy": no_proxy}
 
 
 def run(exe: Path, message: str, cwd: Path, cfg: Path, model: str = "",
