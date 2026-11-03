@@ -212,6 +212,56 @@ def test_playit_tunnels_created_once_agent_is_known(monkeypatch):
     assert calls.count("/tunnels/create") == 2
 
 
+def test_voice_chat_added_later_gets_its_udp_tunnel(make_server):
+    """Simple Voice Chat arrivé par un modpack / le gestionnaire de mods
+    (voice = none dans les métas) : tunnel UDP 24454 en plus de Bedrock, et
+    son adresse va dans voice_host."""
+    from app.core import playit, tunnels
+    path = make_server("vocal", loader="fabric", voice="none")
+    (path / "mods").mkdir()
+    (path / "mods" / "voicechat-fabric-1.21.4-2.5.26.jar").write_bytes(b"j")
+    meta = {"port": 25565, "loader": "fabric", "voice": "none"}
+    assert playit.wanted_for(meta, path) == [
+        ("java", 25565), ("bedrock", 19132), ("voice", 24454)]
+    tunnels.apply(path, "fabric", [
+        {"name": "Bedrock", "proto": "udp", "address": "b.ply.gg:1",
+         "local": 19132},
+        {"name": "Voice Chat", "proto": "udp", "address": "v.ply.gg:4242",
+         "local": 24454}], java_port=25565)
+    cfg = load_properties(path / "config" / "voicechat" /
+                          "voicechat-server.properties")
+    assert cfg["voice_host"] == "v.ply.gg:4242" and cfg["port"] == "24454"
+
+
+def test_plasmo_voice_tunnel_targets_the_server_port(make_server):
+    """Plasmo Voice écoute en UDP sur le port du serveur ([host] port = 0) :
+    le tunnel vise ce port et l'adresse va dans [host.public]."""
+    from app.core import playit, tunnels
+    path = make_server("plasmo", port=25570, voice="plasmo_voice")
+    (path / "plugins").mkdir()
+    (path / "plugins" / "PlasmoVoice-Paper-2.1.3.jar").write_bytes(b"j")
+    cfg = path / "plugins" / "PlasmoVoice" / "config.toml"
+    cfg.parent.mkdir()
+    cfg.write_text('config_version = "1"\n\n[host]\nip = "0.0.0.0"\n'
+                   'port = 0\n# [host.public]\n# ip = "127.0.0.1"\n'
+                   '# port = 0\n\n[voice]\nsample_rate = 48000\n',
+                   encoding="utf-8")
+    meta = {"port": 25570, "loader": "paper", "voice": "plasmo_voice"}
+    assert playit.wanted_for(meta, path)[-1] == ("voice", 25570)
+    assert playit._tunnel_name("plasmo", "voice", 25570) == \
+        "SC plasmo Voice Chat 25570"
+    for _ in range(2):                    # 2e passage : pas de doublon
+        tunnels.apply(path, "paper", [
+            {"name": "Voice Chat", "proto": "udp",
+             "address": "v.ply.gg:31337", "local": 25570}],
+            java_port=25570, voice="plasmo_voice")
+    text = cfg.read_text(encoding="utf-8")
+    assert text.count("[host.public]") == 2          # commenté + le vrai
+    assert '\n[host.public]\nip = "v.ply.gg"\nport = 31337\n' in text
+    assert "sample_rate = 48000" in text and not \
+        (path / "plugins" / "voicechat").exists()
+
+
 # ------------------------------------------------- anciennes versions, Java
 
 def test_old_versions_get_a_java_they_can_run_on(monkeypatch):

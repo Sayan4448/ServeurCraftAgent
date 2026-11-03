@@ -32,17 +32,19 @@ def clean(tunnels: list) -> list:
 
 def apply(server_dir: Path, loader: str, tunnels: list,
           java_port: int = 25565, voice: str = "none") -> str:
-    """Écrit voice_host si un tunnel UDP vise le port vocal, et un
-    récapitulatif PLAYIT-README.txt. Retourne ce récapitulatif."""
+    """Donne au mod vocal (Simple Voice Chat ou Plasmo Voice) l'adresse du
+    tunnel UDP qui vise son port, et écrit un récapitulatif
+    PLAYIT-README.txt. Retourne ce récapitulatif."""
     server_dir = Path(server_dir)
     tunnels = clean(tunnels)
-    vport = mods_mod.DEFAULT_VOICE_PORT
-    vc_path = mods_mod.voicechat_config_path(server_dir, loader)
-    vc_tunnel = next((tn for tn in tunnels
-                      if tn["proto"] == "udp" and tn["local"] == vport), None)
-    if vc_tunnel and (voice != "none" or vc_path.exists()):
-        mods_mod.write_voicechat_config(server_dir, loader, vport,
-                                        vc_tunnel["address"])
+    voice = mods_mod.voice_mod(server_dir, loader, voice)
+    if voice != "none":
+        vport = mods_mod.voice_port(server_dir, loader, voice, java_port)
+        vc_tunnel = next((tn for tn in tunnels if tn["proto"] == "udp"
+                          and tn["local"] == vport), None)
+        if vc_tunnel:
+            mods_mod.set_voice_host(server_dir, loader, voice,
+                                    vc_tunnel["address"], vport)
     lines = ["=== Tunnels Playit.gg ===", ""]
     for tn in tunnels:
         lines.append(f"{tn['name']:<12} {tn['proto'].upper():<4} "

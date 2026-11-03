@@ -947,6 +947,9 @@ def duplicate_server(name: str, new_name: str) -> dict:
         voice = mods_mod.voicechat_config_path(dst, meta.get("loader", ""))
         if voice.exists():            # adresse du tunnel de l'original
             update_properties(voice, {"voice_host": ""})
+        if mods_mod.plasmo_config_path(dst, meta.get("loader", "")).exists():
+            mods_mod.set_voice_host(dst, meta.get("loader", ""),
+                                    "plasmo_voice", "")
     except Exception:
         shutil.rmtree(dst, ignore_errors=True)
         raise

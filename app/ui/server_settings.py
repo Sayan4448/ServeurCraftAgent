@@ -393,16 +393,16 @@ class ServerSettings(ctk.CTkToplevel):
         self.meta["crash_max_restarts"] = self._int(
             "crash_max_restarts", sm.DEFAULT_CRASH_MAX, 1)
         self._write_meta()
-        tunnels_mod.apply(self.dir, self.meta.get("loader", ""),
-                          self.meta["tunnels"], java_port=self.meta["port"],
-                          voice=self.meta.get("voice", "none"))
-
-        # voice chat
+        # voice chat d'abord : l'adresse d'un tunnel UDP sur le port vocal
+        # (écrite par apply) ne doit pas être écrasée par l'ancien champ
         if self.vc_path:
             update_properties(self.vc_path, {
                 "port": self._widgets["vc_port"].get().strip() or "24454",
                 "voice_host": self._widgets["vc_host"].get().strip(),
             })
+        tunnels_mod.apply(self.dir, self.meta.get("loader", ""),
+                          self.meta["tunnels"], java_port=self.meta["port"],
+                          voice=self.meta.get("voice", "none"))
 
         # cross-play / sécurité : téléchargements en arrière-plan
         loader, mc = self.meta.get("loader", ""), self.meta.get("mc_version")

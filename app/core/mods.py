@@ -829,6 +829,135 @@ def write_voicechat_config(
     return path
 
 
+def plasmo_config_path(server_dir: Path, loader: str) -> Path:
+    """config.toml de Plasmo Voice 2.x (plugin Paper ou mod)."""
+    plugin = server_dir / "plugins" / "PlasmoVoice" / "config.toml"
+    mod = server_dir / "config" / "plasmovoice" / "server" / "config.toml"
+    if plugin.exists() or mod.exists():
+        return plugin if plugin.exists() else mod
+    return plugin if loader in ("paper", "purpur") else mod
+
+
+def voice_mod(server_dir: Path, loader: str, chosen: str = "none") -> str:
+    """Mod vocal réellement présent : jar dans mods/ ou plugins/ (modpack,
+    gestionnaire de mods…), sinon sa config, sinon le choix de la création."""
+    server_dir = Path(server_dir)
+    for it in list_installed(server_dir, loader):
+        name = re.sub(r"[^a-z]", "", it["name"].lower())
+        if it.get("disabled"):
+            continue
+        if name.startswith("voicechat"):
+            return "simple_voice_chat"
+        if "plasmovoice" in name:
+            return "plasmo_voice"
+    if voicechat_config_path(server_dir, loader).exists():
+        return "simple_voice_chat"
+    if plasmo_config_path(server_dir, loader).exists():
+        return "plasmo_voice"
+    return chosen if chosen in VOICE_PROJECTS else "none"
+
+
+def voice_port(server_dir: Path, loader: str, voice: str,
+               server_port: int = 25565) -> int:
+    """Port UDP local du mod vocal. Simple Voice Chat : 24454 (-1 = port du
+    serveur) ; Plasmo Voice : celui du serveur ([host] port = 0)."""
+    server_dir = Path(server_dir)
+    if voice == "plasmo_voice":
+        raw = _toml_get(plasmo_config_path(server_dir, loader), "host",
+                        "port")
+        default, same = 0, 0
+    else:
+        raw = load_properties(voicechat_config_path(server_dir, loader)).get(
+            "port")
+        default, same = DEFAULT_VOICE_PORT, -1
+    try:
+        port = int(raw) if raw not in (None, "") else default
+    except ValueError:
+        port = default
+    if port == same:
+        return int(server_port)
+    return port if 0 < port < 65536 else DEFAULT_VOICE_PORT
+
+
+def set_voice_host(server_dir: Path, loader: str, voice: str, address: str,
+                   port: int = DEFAULT_VOICE_PORT) -> Path:
+    """Adresse publique (tunnel UDP) annoncée aux joueurs par le mod vocal.
+    `address` vide = annoncer l'adresse du serveur (par défaut)."""
+    server_dir = Path(server_dir)
+    if voice != "plasmo_voice":
+        return write_voicechat_config(server_dir, loader, port, address)
+    host, _, pub = address.rpartition(":")
+    if not host or not pub.isdigit():
+        host, pub = address, "0"
+    path = plasmo_config_path(server_dir, loader)
+    # [host.public] ip 0.0.0.0 / port 0 = valeurs de [host] (comportement
+    # par défaut de Plasmo Voice)
+    _toml_set(path, "host.public", {"ip": json.dumps(host or "0.0.0.0"),
+                                    "port": pub})
+    return path
+
+
+_TOML_HEADER = re.compile(r"\s*\[\[?\s*([^\[\]]+?)\s*\]\]?\s*(#.*)?$")
+
+
+def _toml_section(lines: list, section: str):
+    """(ligne d'en-tête, fin) de [section] ; None si absente (les en-têtes
+    commentés « # [host.public] » ne comptent pas)."""
+    start = None
+    for i, line in enumerate(lines):
+        m = _TOML_HEADER.match(line)
+        if not m:
+            continue
+        if start is not None:
+            return start, i
+        if m.group(1) == section:
+            start = i
+    return None if start is None else (start, len(lines))
+
+
+def _toml_key(line: str, key: str):
+    m = re.match(rf"\s*{re.escape(key)}\s*=\s*(.*?)\s*(#.*)?$", line)
+    return m.group(1).strip('"\'') if m else None
+
+
+def _toml_get(path: Path, section: str, key: str):
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    sec = _toml_section(lines, section)
+    if sec:
+        for line in lines[sec[0] + 1:sec[1]]:
+            val = _toml_key(line, key)
+            if val is not None:
+                return val
+    return None
+
+
+def _toml_set(path: Path, section: str, values: dict) -> None:
+    """Remplace / ajoute des clés (valeurs TOML déjà formatées) dans une
+    section, sans toucher au reste du fichier ni à ses commentaires."""
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        lines = ["[host]", 'ip = "0.0.0.0"', "port = 0"]
+    sec = _toml_section(lines, section)
+    if not sec:
+        lines += ["", f"[{section}]"] + [f"{k} = {v}"
+                                          for k, v in values.items()]
+    else:
+        for key, val in values.items():
+            i = next((j for j in range(sec[0] + 1, sec[1])
+                      if _toml_key(lines[j], key) is not None), None)
+            if i is None:
+                lines.insert(sec[0] + 1, f"{key} = {val}")
+                sec = (sec[0], sec[1] + 1)
+            else:
+                lines[i] = f"{key} = {val}"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def configure_playit(
     server_dir: Path,
     loader: str,
