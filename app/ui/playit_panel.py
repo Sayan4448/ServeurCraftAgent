@@ -65,7 +65,7 @@ class PlayitPanel(ctk.CTkToplevel):
         self._steps = {}
         steps = [("link", t("pl_step_link"))]
         if proc:
-            for kind, _local in playit.wanted_for(proc.meta):
+            for kind, _local in playit.wanted_for(proc.meta, proc.path):
                 _p, proto, label = playit.KINDS[kind]
                 steps.append((label, t("pl_step_tunnel", proto=proto.upper(),
                                        name=label)))

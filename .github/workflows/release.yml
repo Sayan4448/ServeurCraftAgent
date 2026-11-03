@@ -1,0 +1,92 @@
+# Une version qui change dans app/__init__.py = MSI compilé sous Windows et
+# publié sur GitHub (pré-version si __channel__ n'est pas vide).
+# Rien n'est fait si le tag de cette version existe déjà.
+name: Release
+
+on:
+  push:
+    paths:
+      - "app/__init__.py"
+      - ".github/workflows/release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  msi:
+    runs-on: windows-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      # sorties Python en UTF-8 (accents et symboles du CHANGELOG) et non
+      # dans la page de code Windows
+      PYTHONUTF8: "1"
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          # 3.12 : dernière version avec msilib, utilisé par bdist_msi
+          python-version: "3.12"
+
+      - name: Version
+        id: v
+        run: |
+          python - >> "$GITHUB_OUTPUT" <<'EOF'
+          import app
+          shown = getattr(app, "__display_version__", app.__version__)
+          print(f"tag=v{shown}")
+          print(f"title=ServerCraft Agent {shown} {app.__channel__}".strip())
+          print(f"pre={'true' if app.__channel__ else 'false'}")
+          EOF
+          tag=$(grep '^tag=' "$GITHUB_OUTPUT" | tail -1 | cut -d= -f2)
+          if gh release view "$tag" > /dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "La release $tag existe déjà : rien à faire."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Dépendances
+        if: steps.v.outputs.exists == 'false'
+        run: pip install -r requirements-dev.txt cx_Freeze
+
+      - name: Tests
+        if: steps.v.outputs.exists == 'false'
+        run: python -m pytest
+
+      - name: MSI
+        if: steps.v.outputs.exists == 'false'
+        run: python setup.py bdist_msi
+
+      - name: Notes (section du CHANGELOG)
+        if: steps.v.outputs.exists == 'false'
+        run: |
+          python - "${{ steps.v.outputs.tag }}" "${{ github.repository }}" \
+            "$(basename dist/*.msi)" > notes.md <<'EOF'
+          import re, sys
+          tag, repo, msi = sys.argv[1:4]
+          text = open("CHANGELOG.md", encoding="utf-8").read()
+          parts = re.split(r"(?m)^## ", text)
+          sec = next((p for p in parts[1:] if p.startswith(tag + " ")), "")
+          body = sec.split("\n", 1)[1].strip() if sec else ""
+          print(body + "\n\nDétail complet dans le [CHANGELOG]"
+                f"(https://github.com/{repo}/blob/{tag}/CHANGELOG.md).\n\n"
+                f"### Installation\nTélécharge `{msi}` ci-dessous et "
+                "double-clique : aucun droit administrateur requis. Il "
+                "remplace la version déjà installée ; tes serveurs et "
+                "réglages sont conservés.\n\nWindows 10 et 11.")
+          EOF
+
+      - name: Publication
+        if: steps.v.outputs.exists == 'false'
+        run: |
+          pre=""
+          [ "${{ steps.v.outputs.pre }}" = "true" ] && pre="--prerelease"
+          gh release create "${{ steps.v.outputs.tag }}" dist/*.msi \
+            --target "$GITHUB_SHA" \
+            --title "${{ steps.v.outputs.title }}" \
+            --notes-file notes.md $pre

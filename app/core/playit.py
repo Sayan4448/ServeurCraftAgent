@@ -196,15 +196,20 @@ def _matches(tunnel: dict, kind: str, local: int) -> bool:
             and _field(tunnel, "local_port") == str(local))
 
 
-def wanted_for(meta: dict) -> list:
+def wanted_for(meta: dict, server_dir) -> list:
     """Tunnels d'un serveur : [(kind, port local)] — Java en TCP et Bedrock
-    en UDP (prêt si le cross-play est activé plus tard), + Voice Chat."""
+    en UDP (prêt si le cross-play est activé plus tard), + un tunnel UDP
+    sur le port du mod vocal s'il est installé (même ajouté après la
+    création : modpack, gestionnaire de mods)."""
+    from . import mods as mods_mod
     from .crossplay import BEDROCK_PORT
-    from .mods import DEFAULT_VOICE_PORT
-    out = [("java", int(meta.get("port", 25565))),
-           ("bedrock", BEDROCK_PORT)]
-    if meta.get("voice", "none") not in ("none", "", None):
-        out.append(("voice", DEFAULT_VOICE_PORT))
+    port = int(meta.get("port", 25565))
+    out = [("java", port), ("bedrock", BEDROCK_PORT)]
+    loader = meta.get("loader", "")
+    voice = mods_mod.voice_mod(server_dir, loader, meta.get("voice", "none"))
+    if voice != "none":
+        out.append(("voice", mods_mod.voice_port(server_dir, loader, voice,
+                                                 port)))
     return out
 
 
@@ -217,7 +222,7 @@ def setup_server(name: str, server_dir, log=None) -> list:
     from .server_manager import META_FILE
     f = Path(server_dir) / META_FILE
     meta = json.loads(f.read_text(encoding="utf-8"))
-    found = ensure_tunnels(name, wanted_for(meta), log)
+    found = ensure_tunnels(name, wanted_for(meta, server_dir), log)
     keep = [tn for tn in meta.get("tunnels") or []
             if not any(tn.get("proto") == x["proto"]
                        and str(tn.get("local")) == str(x["local"])
@@ -246,7 +251,7 @@ def ensure_tunnels(server: str, wanted: list, log=None,
         known = rd.get("tunnels", []) + rd.get("pending", [])
         if any(_matches(tn, kind, local) for tn in rd.get("tunnels", [])):
             continue
-        name = _tunnel_name(server, kind)
+        name = _tunnel_name(server, kind, local)
         if any(p.get("name") == name for p in known):
             continue                                    # déjà en attente
         tunnel_type, proto, label = KINDS[kind]
@@ -301,9 +306,15 @@ def _create_tunnel(key: str, body: dict) -> None:
             time.sleep(2)
 
 
-def _tunnel_name(server: str, kind: str) -> str:
+def _tunnel_name(server: str, kind: str, local: int = 0) -> str:
+    from .mods import DEFAULT_VOICE_PORT
     base = re.sub(r"[^A-Za-z0-9 _.-]", "", f"SC {server}")[:40].strip()
-    return f"{base} {KINDS[kind][2]}"[:60]
+    label = KINDS[kind][2]
+    # port dans le nom : un ancien tunnel vocal sur un autre port (Plasmo
+    # Voice visait 24454) ne bloque pas la création du bon
+    if kind == "voice" and local and local != DEFAULT_VOICE_PORT:
+        label += f" {local}"
+    return f"{base} {label}"[:60]
 
 
 # ================================================================ agent

@@ -4,6 +4,43 @@
 > 1.0.0 s'appelle désormais **0.8.0**, la 1.1.0 **0.8.1** et la 1.30.0
 > **0.9.0**. La **1.0.0 Beta** ci-dessous est la première version stable.
 
+## v1.1a — Beta (2026-11-03)
+
+**Corrections**
+
+*Voice Chat et Playit.gg*
+- **Le tunnel UDP du Voice Chat n'était pas créé** quand Simple Voice
+  Chat ou Plasmo Voice arrivait par un modpack ou le gestionnaire de mods
+  (et pas à la création du serveur) : seuls les tunnels Java et Bedrock
+  étaient créés, et les joueurs ne s'entendaient pas. Le mod vocal est
+  maintenant repéré tout seul, un tunnel UDP est créé sur son port et son
+  adresse est écrite directement dans sa config
+- **Plasmo Voice** : le tunnel visait le port de Simple Voice Chat
+  (24454) alors que Plasmo Voice écoute sur le port du serveur. Le tunnel
+  vise le bon port et l'adresse publique va dans `[host.public]` de
+  `config.toml`
+- Simple Voice Chat : un port changé dans `voicechat-server.properties`
+  est respecté (`-1` = port du serveur)
+- ⚙ Paramètres du serveur : « Enregistrer » remettait l'ancien
+  `voice_host` par-dessus l'adresse du tunnel
+- Serveur dupliqué : il n'annonce plus l'adresse vocale de l'original
+
+**Nouveau**
+- **Terminal OpenCode** (⚙ Paramètres, sous « Agent IA », et dans
+  l'onglet Agent IA) : on écrit une demande, une IA gratuite d'OpenCode
+  (sans clé API) s'occupe du serveur choisi. Elle peut le démarrer et
+  l'arrêter, lire les erreurs, modifier les configs, installer des mods,
+  envoyer des commandes et créer les tunnels Playit. OpenCode est
+  téléchargé tout seul au premier lancement. « Ouvrir OpenCode complet »
+  ouvre son interface entière (connexion à d'autres fournisseurs, choix
+  du modèle). Les outils passent par un petit serveur local
+  (127.0.0.1, protégé par un jeton) qui n'existe que tant que la fenêtre
+  est ouverte
+
+**Publication**
+- Le MSI est compilé et publié par GitHub (Windows) dès que la version
+  change : plus besoin d'un PC pour sortir une version
+
 ## v1.0.0 — Beta stable (2026-10-03)
 
 **Corrections**
