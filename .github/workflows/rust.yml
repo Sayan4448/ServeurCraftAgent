@@ -1,0 +1,28 @@
+# Édition Rust : tests + .exe Windows à chaque push (téléchargeable dans
+# l'onglet Actions → ce run → Artifacts). Pas de release : la version
+# Python reste la version officielle.
+name: Rust (Windows)
+
+on:
+  push:
+    branches: [rust]
+  workflow_dispatch:
+
+jobs:
+  exe:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tests
+        run: cargo test
+      - name: Build
+        run: cargo build --release
+      - name: Exe
+        shell: bash
+        run: |
+          mkdir out
+          cp target/release/servercraft.exe out/ServerCraftAgent-Rust.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ServerCraftAgent-Rust-windows
+          path: out/ServerCraftAgent-Rust.exe
