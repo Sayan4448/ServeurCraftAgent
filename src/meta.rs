@@ -60,14 +60,22 @@ pub fn list_servers() -> Vec<ServerInfo> {
     let Ok(rd) = std::fs::read_dir(paths::servers_dir()) else {
         return out;
     };
-    let mut dirs: Vec<PathBuf> = rd.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect();
+    let mut dirs: Vec<PathBuf> = rd
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.is_dir())
+        .collect();
     dirs.sort();
     for d in dirs {
         let Ok(meta) = load(&d) else { continue };
         if str_of(&meta, "loader").is_empty() || str_of(&meta, "mc_version").is_empty() {
             continue;
         }
-        let name = d.file_name().unwrap_or_default().to_string_lossy().to_string();
+        let name = d
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
         out.push(ServerInfo { name, dir: d, meta });
     }
     out
@@ -88,7 +96,11 @@ mod tests {
     fn save_keeps_unknown_keys() {
         let dir = std::env::temp_dir().join(format!("sc-meta-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join(META_FILE), r#"{"loader":"paper","scheduled_commands":[1]}"#).unwrap();
+        std::fs::write(
+            dir.join(META_FILE),
+            r#"{"loader":"paper","scheduled_commands":[1]}"#,
+        )
+        .unwrap();
         let mut m = load(&dir).unwrap();
         m.insert("ram_mb".into(), 2048.into());
         save(&dir, &m).unwrap();

@@ -147,7 +147,11 @@ impl App {
     }
 
     fn refresh(&mut self, force: bool) {
-        if force || self.listed_at.is_none_or(|t| t.elapsed() > Duration::from_secs(2)) {
+        if force
+            || self
+                .listed_at
+                .is_none_or(|t| t.elapsed() > Duration::from_secs(2))
+        {
             self.servers = meta::list_servers();
             self.listed_at = Some(Instant::now());
             self.playit_linked = Some(playit::linked());
@@ -209,7 +213,11 @@ impl App {
             ui.label(RichText::new(VERSION_LABEL).small().color(ORANGE));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let linked = self.playit_linked.unwrap_or(false);
-                let txt = if linked { "🌐 Playit : lié" } else { "🌐 Lier Playit" };
+                let txt = if linked {
+                    "🌐 Playit : lié"
+                } else {
+                    "🌐 Lier Playit"
+                };
                 if ui.button(txt).clicked() {
                     self.playit = Some(PlayitDialog::default());
                 }
@@ -229,29 +237,41 @@ impl App {
         ui.label(RichText::new("Mes serveurs").strong());
         ui.separator();
         if self.servers.is_empty() {
-            ui.label(RichText::new("Aucun serveur. Créez-en un avec « ＋ Nouveau serveur ».").color(MUTED));
+            ui.label(
+                RichText::new("Aucun serveur. Créez-en un avec « ＋ Nouveau serveur ».")
+                    .color(MUTED),
+            );
         }
         let servers = self.servers.clone();
         egui::ScrollArea::vertical().show(ui, |ui| {
-            for s in &servers {
-                let st = self.proc(s).status();
-                let (dot, col) = status_dot(&st);
-                let sel = self.selected.as_deref() == Some(&s.name);
-                let text = format!(
-                    "{dot} {}\n   {} {}",
-                    s.name,
-                    meta::str_of(&s.meta, "loader"),
-                    meta::str_of(&s.meta, "mc_version")
-                );
-                let r = ui.add_sized(
-                    [ui.available_width(), 40.0],
-                    egui::Button::selectable(sel, RichText::new(text).color(if sel { TEXT } else { col })),
-                );
-                if r.clicked() {
-                    self.selected = Some(s.name.clone());
-                }
-            }
+            ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
+                self.server_rows(ui, &servers)
+            });
         });
+    }
+
+    fn server_rows(&mut self, ui: &mut egui::Ui, servers: &[ServerInfo]) {
+        for s in servers {
+            let st = self.proc(s).status();
+            let (dot, col) = status_dot(&st);
+            let sel = self.selected.as_deref() == Some(&s.name);
+            let text = format!(
+                "{dot} {}\n   {} {}",
+                s.name,
+                meta::str_of(&s.meta, "loader"),
+                meta::str_of(&s.meta, "mc_version")
+            );
+            let r = ui.add(
+                egui::Button::selectable(
+                    sel,
+                    RichText::new(text).color(if sel { TEXT } else { col }),
+                )
+                .min_size(egui::vec2(0.0, 40.0)),
+            );
+            if r.clicked() {
+                self.selected = Some(s.name.clone());
+            }
+        }
     }
 
     fn server_view(&mut self, ui: &mut egui::Ui) {
@@ -289,13 +309,19 @@ impl App {
         ui.horizontal(|ui| {
             let running = st.running || st.starting;
             if ui
-                .add_enabled(!running, egui::Button::new("▶ Lancer").fill(GREEN.gamma_multiply(0.6)))
+                .add_enabled(
+                    !running,
+                    egui::Button::new("▶ Lancer").fill(GREEN.gamma_multiply(0.6)),
+                )
                 .clicked()
             {
                 proc.start();
             }
             if ui
-                .add_enabled(st.running && !st.stopping, egui::Button::new("■ Arrêter").fill(RED.gamma_multiply(0.5)))
+                .add_enabled(
+                    st.running && !st.stopping,
+                    egui::Button::new("■ Arrêter").fill(RED.gamma_multiply(0.5)),
+                )
                 .clicked()
             {
                 proc.stop();
@@ -336,7 +362,11 @@ impl App {
         });
 
         // ------------------------------------------------- adresses, joueurs
-        let tunnels = m.get("tunnels").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+        let tunnels = m
+            .get("tunnels")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
         if !tunnels.is_empty() {
             ui.horizontal_wrapped(|ui| {
                 for tn in &tunnels {
@@ -364,8 +394,11 @@ impl App {
             };
             let up = st.uptime.map(fmt_uptime).unwrap_or_default();
             ui.label(
-                RichText::new(format!("Joueurs ({}) : {players}   ·   en ligne depuis {up}", st.players.len()))
-                    .color(MUTED),
+                RichText::new(format!(
+                    "Joueurs ({}) : {players}   ·   en ligne depuis {up}",
+                    st.players.len()
+                ))
+                .color(MUTED),
             );
         }
         ui.add_space(4.0);
@@ -407,7 +440,10 @@ impl App {
                     .desired_width(ui.available_width() - 100.0),
             );
             let enter = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-            if (ui.add_enabled(st.running, egui::Button::new("Envoyer")).clicked() || enter)
+            if (ui
+                .add_enabled(st.running, egui::Button::new("Envoyer"))
+                .clicked()
+                || enter)
                 && !self.input.trim().is_empty()
             {
                 let cmd = std::mem::take(&mut self.input);
@@ -421,7 +457,9 @@ impl App {
     }
 
     fn create_window(&mut self, ctx: &egui::Context) {
-        let Some(d) = self.create.as_mut() else { return };
+        let Some(d) = self.create.as_mut() else {
+            return;
+        };
         let mut open = true;
         let mut done: Option<String> = None;
         egui::Window::new("Nouveau serveur")
@@ -437,7 +475,12 @@ impl App {
             self.refresh(true);
             self.selected = Some(name);
             self.create = None;
-        } else if !open && self.create.as_ref().is_some_and(|d| d.job.is_none() || d.finished()) {
+        } else if !open
+            && self
+                .create
+                .as_ref()
+                .is_some_and(|d| d.job.is_none() || d.finished())
+        {
             // une création en cours continue : la fenêtre reste ouverte
             self.refresh(true);
             self.create = None;
@@ -445,7 +488,9 @@ impl App {
     }
 
     fn playit_window(&mut self, ctx: &egui::Context) {
-        let Some(d) = self.playit.as_mut() else { return };
+        let Some(d) = self.playit.as_mut() else {
+            return;
+        };
         let mut open = true;
         let mut relist = false;
         egui::Window::new("Playit.gg")
@@ -505,7 +550,9 @@ impl App {
 
 impl App {
     fn backups_window(&mut self, ctx: &egui::Context) {
-        let Some(d) = self.backups.as_mut() else { return };
+        let Some(d) = self.backups.as_mut() else {
+            return;
+        };
         let running = self.procs.get(&d.server).is_some_and(|p| p.is_running());
         let proc = self.procs.get(&d.server).cloned();
         let mut open = true;
@@ -528,7 +575,10 @@ impl BackupsDialog {
             dir: info.dir.clone(),
             list: backups::list(&info.name),
             confirm: None,
-            on_stop: m.get("backup_on_stop").and_then(|v| v.as_bool()).unwrap_or(true),
+            on_stop: m
+                .get("backup_on_stop")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true),
             interval_min: meta::int_of(&m, "backup_interval_min", 0),
             keep: meta::int_of(&m, "backup_keep", backups::DEFAULT_KEEP),
             status: Default::default(),
@@ -543,7 +593,11 @@ impl BackupsDialog {
         ui.checkbox(&mut self.on_stop, "Sauvegarder avant chaque arrêt");
         ui.horizontal(|ui| {
             ui.label("Sauvegarde automatique toutes les");
-            ui.add(egui::DragValue::new(&mut self.interval_min).range(0..=1440).suffix(" min"));
+            ui.add(
+                egui::DragValue::new(&mut self.interval_min)
+                    .range(0..=1440)
+                    .suffix(" min"),
+            );
             ui.label(RichText::new("(0 = jamais)").color(MUTED));
         });
         ui.horizontal(|ui| {
@@ -565,7 +619,9 @@ impl BackupsDialog {
             }
         });
         ui.label(
-            RichText::new("Les sauvegardes manuelles ne sont jamais supprimées automatiquement.").color(MUTED).small(),
+            RichText::new("Les sauvegardes manuelles ne sont jamais supprimées automatiquement.")
+                .color(MUTED)
+                .small(),
         );
         ui.separator();
 
@@ -577,34 +633,44 @@ impl BackupsDialog {
             ui.label(RichText::new("Aucune sauvegarde pour l'instant.").color(MUTED));
         }
         let mut action: Option<(PathBuf, bool)> = None;
-        egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
-            egui::Grid::new("backups").num_columns(4).striped(true).spacing([14.0, 6.0]).show(ui, |ui| {
-                for b in &self.list {
-                    ui.label(&b.date);
-                    ui.label(RichText::new(backups::reason_label(&b.reason)).color(MUTED));
-                    ui.label(backups::fmt_size(b.size));
-                    ui.horizontal(|ui| {
-                        let restore_tip = if running {
-                            "Arrêtez d'abord le serveur"
-                        } else {
-                            "Remplace le monde actuel (sauvegardé avant)"
-                        };
-                        if ui
-                            .add_enabled(!running && !busy, egui::Button::new("Restaurer"))
-                            .on_hover_text(restore_tip)
-                            .on_disabled_hover_text(restore_tip)
-                            .clicked()
-                        {
-                            action = Some((b.path.clone(), true));
-                        }
-                        if ui.add_enabled(!busy, egui::Button::new("🗑")).on_hover_text("Supprimer").clicked() {
-                            action = Some((b.path.clone(), false));
+        egui::ScrollArea::vertical()
+            .max_height(300.0)
+            .show(ui, |ui| {
+                egui::Grid::new("backups")
+                    .num_columns(4)
+                    .striped(true)
+                    .spacing([14.0, 6.0])
+                    .show(ui, |ui| {
+                        for b in &self.list {
+                            ui.label(&b.date);
+                            ui.label(RichText::new(backups::reason_label(&b.reason)).color(MUTED));
+                            ui.label(backups::fmt_size(b.size));
+                            ui.horizontal(|ui| {
+                                let restore_tip = if running {
+                                    "Arrêtez d'abord le serveur"
+                                } else {
+                                    "Remplace le monde actuel (sauvegardé avant)"
+                                };
+                                if ui
+                                    .add_enabled(!running && !busy, egui::Button::new("Restaurer"))
+                                    .on_hover_text(restore_tip)
+                                    .on_disabled_hover_text(restore_tip)
+                                    .clicked()
+                                {
+                                    action = Some((b.path.clone(), true));
+                                }
+                                if ui
+                                    .add_enabled(!busy, egui::Button::new("🗑"))
+                                    .on_hover_text("Supprimer")
+                                    .clicked()
+                                {
+                                    action = Some((b.path.clone(), false));
+                                }
+                            });
+                            ui.end_row();
                         }
                     });
-                    ui.end_row();
-                }
             });
-        });
         if action.is_some() {
             self.confirm = action;
         }
@@ -612,7 +678,11 @@ impl BackupsDialog {
         // --------------------------------------------------- confirmation
         if let Some((path, restore)) = self.confirm.clone() {
             ui.separator();
-            let file = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+            let file = path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
             ui.colored_label(
                 ORANGE,
                 if restore {
@@ -622,7 +692,10 @@ impl BackupsDialog {
                 },
             );
             ui.horizontal(|ui| {
-                if ui.add(egui::Button::new("Confirmer").fill(RED.gamma_multiply(0.5))).clicked() {
+                if ui
+                    .add(egui::Button::new("Confirmer").fill(RED.gamma_multiply(0.5)))
+                    .clicked()
+                {
                     self.confirm = None;
                     if restore {
                         self.restore(path.clone(), proc.clone());
@@ -643,7 +716,11 @@ impl BackupsDialog {
         if busy {
             ui.horizontal(|ui| {
                 ui.spinner();
-                ui.label(if msg.is_empty() { "Sauvegarde en cours…".to_string() } else { msg });
+                ui.label(if msg.is_empty() {
+                    "Sauvegarde en cours…".to_string()
+                } else {
+                    msg
+                });
             });
         } else if !msg.is_empty() {
             ui.label(msg);
@@ -716,74 +793,89 @@ impl CreateDialog {
     }
 
     fn form(&mut self, ui: &mut egui::Ui) {
-        egui::Grid::new("create").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
-            ui.label("Nom");
-            ui.add(egui::TextEdit::singleline(&mut self.name).hint_text("Survie entre potes"));
-            ui.end_row();
+        egui::Grid::new("create")
+            .num_columns(2)
+            .spacing([12.0, 8.0])
+            .show(ui, |ui| {
+                ui.label("Nom");
+                ui.add(egui::TextEdit::singleline(&mut self.name).hint_text("Survie entre potes"));
+                ui.end_row();
 
-            ui.label("Type");
-            let label = loaders::LOADERS
-                .iter()
-                .find(|(k, _)| *k == self.loader)
-                .map(|(_, l)| *l)
-                .unwrap_or("?");
-            egui::ComboBox::from_id_salt("loader").selected_text(label).show_ui(ui, |ui| {
-                for (k, l) in loaders::LOADERS {
-                    ui.selectable_value(&mut self.loader, k.to_string(), *l);
-                }
-            });
-            ui.end_row();
-
-            ui.label("Version");
-            let versions = self.versions.lock().unwrap().clone();
-            match versions {
-                None => {
-                    ui.horizontal(|ui| {
-                        ui.spinner();
-                        ui.label("Chargement des versions…");
+                ui.label("Type");
+                let label = loaders::LOADERS
+                    .iter()
+                    .find(|(k, _)| *k == self.loader)
+                    .map(|(_, l)| *l)
+                    .unwrap_or("?");
+                egui::ComboBox::from_id_salt("loader")
+                    .selected_text(label)
+                    .show_ui(ui, |ui| {
+                        for (k, l) in loaders::LOADERS {
+                            ui.selectable_value(&mut self.loader, k.to_string(), *l);
+                        }
                     });
-                }
-                Some(Err(e)) => {
-                    ui.colored_label(RED, format!("✖ {e}"));
-                }
-                Some(Ok(list)) => {
-                    if self.version.is_empty() {
-                        self.version = list.first().cloned().unwrap_or_default();
-                    }
-                    egui::ComboBox::from_id_salt("version")
-                        .selected_text(self.version.clone())
-                        .height(300.0)
-                        .show_ui(ui, |ui| {
-                            for v in &list {
-                                ui.selectable_value(&mut self.version, v.clone(), v);
-                            }
+                ui.end_row();
+
+                ui.label("Version");
+                let versions = self.versions.lock().unwrap().clone();
+                match versions {
+                    None => {
+                        ui.horizontal(|ui| {
+                            ui.spinner();
+                            ui.label("Chargement des versions…");
                         });
+                    }
+                    Some(Err(e)) => {
+                        ui.colored_label(RED, format!("✖ {e}"));
+                    }
+                    Some(Ok(list)) => {
+                        if self.version.is_empty() {
+                            self.version = list.first().cloned().unwrap_or_default();
+                        }
+                        egui::ComboBox::from_id_salt("version")
+                            .selected_text(self.version.clone())
+                            .height(300.0)
+                            .show_ui(ui, |ui| {
+                                for v in &list {
+                                    ui.selectable_value(&mut self.version, v.clone(), v);
+                                }
+                            });
+                    }
                 }
-            }
-            ui.end_row();
+                ui.end_row();
 
-            ui.label("RAM");
-            ui.add(egui::Slider::new(&mut self.ram_gb, 1.0..=16.0).step_by(0.5).suffix(" Go"));
-            ui.end_row();
+                ui.label("RAM");
+                ui.add(
+                    egui::Slider::new(&mut self.ram_gb, 1.0..=16.0)
+                        .step_by(0.5)
+                        .suffix(" Go"),
+                );
+                ui.end_row();
 
-            ui.label("Port");
-            ui.add(egui::TextEdit::singleline(&mut self.port).desired_width(80.0));
-            ui.end_row();
+                ui.label("Port");
+                ui.add(egui::TextEdit::singleline(&mut self.port).desired_width(80.0));
+                ui.end_row();
 
-            ui.label("Message (MOTD)");
-            ui.text_edit_singleline(&mut self.motd);
-            ui.end_row();
-        });
+                ui.label("Message (MOTD)");
+                ui.text_edit_singleline(&mut self.motd);
+                ui.end_row();
+            });
         if self.loader != self.versions_for {
             self.fetch_versions();
         }
-        ui.checkbox(&mut self.online, "Comptes Minecraft officiels uniquement (premium)");
+        ui.checkbox(
+            &mut self.online,
+            "Comptes Minecraft officiels uniquement (premium)",
+        );
         ui.checkbox(&mut self.playit, "Adresse gratuite Playit.gg au lancement");
         if !self.error.is_empty() {
             ui.colored_label(RED, &self.error);
         }
         ui.add_space(6.0);
-        if ui.add(egui::Button::new("Créer le serveur").fill(ACCENT)).clicked() {
+        if ui
+            .add(egui::Button::new("Créer le serveur").fill(ACCENT))
+            .clicked()
+        {
             self.submit();
         }
     }
@@ -829,7 +921,9 @@ impl CreateDialog {
     }
 
     fn finished(&self) -> bool {
-        self.job.as_ref().is_some_and(|j| j.result.lock().unwrap().is_some())
+        self.job
+            .as_ref()
+            .is_some_and(|j| j.result.lock().unwrap().is_some())
     }
 
     fn show_job(&self, ui: &mut egui::Ui, job: &CreateJob, done: &mut Option<String>) {

@@ -86,7 +86,10 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let m = meta(json!({"ram_mb": "1024", "launch_args": "libraries/x/win_args.txt"}));
         let args = args_for(&dir, &m).unwrap();
-        assert_eq!(args, ["@user_jvm_args.txt", "@libraries/x/win_args.txt", "nogui"]);
+        assert_eq!(
+            args,
+            ["@user_jvm_args.txt", "@libraries/x/win_args.txt", "nogui"]
+        );
         let jvm = std::fs::read_to_string(dir.join("user_jvm_args.txt")).unwrap();
         assert!(jvm.starts_with("-Xms1024M\n-Xmx1024M\n-Dfile.encoding=UTF-8"));
         std::fs::remove_dir_all(dir).ok();

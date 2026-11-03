@@ -57,7 +57,11 @@ pub fn fmt_size(n: u64) -> String {
     let mut v = n as f64;
     for unit in ["o", "Ko", "Mo"] {
         if v < 1024.0 {
-            return if unit == "o" { format!("{v:.0} {unit}") } else { format!("{v:.1} {unit}") };
+            return if unit == "o" {
+                format!("{v:.0} {unit}")
+            } else {
+                format!("{v:.1} {unit}")
+            };
         }
         v /= 1024.0;
     }
@@ -68,12 +72,19 @@ pub fn fmt_size(n: u64) -> String {
 /// Forge rangent tout dans <level>).
 pub fn world_dirs(server: &Path) -> Vec<PathBuf> {
     let p = props::load(&server.join("server.properties"));
-    let level = p.get("level-name").filter(|s| !s.is_empty()).map_or("world", |s| s.as_str());
-    [level.to_string(), format!("{level}_nether"), format!("{level}_the_end")]
-        .iter()
-        .map(|n| server.join(n))
-        .filter(|d| d.is_dir())
-        .collect()
+    let level = p
+        .get("level-name")
+        .filter(|s| !s.is_empty())
+        .map_or("world", |s| s.as_str());
+    [
+        level.to_string(),
+        format!("{level}_nether"),
+        format!("{level}_the_end"),
+    ]
+    .iter()
+    .map(|n| server.join(n))
+    .filter(|d| d.is_dir())
+    .collect()
 }
 
 pub fn busy(name: &str) -> bool {
@@ -86,7 +97,9 @@ pub fn list(name: &str) -> Vec<Backup> {
 }
 
 fn list_in(dir: &Path) -> Vec<Backup> {
-    let Ok(rd) = std::fs::read_dir(dir) else { return vec![] };
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return vec![];
+    };
     let mut out: Vec<Backup> = rd
         .flatten()
         .filter_map(|e| {
@@ -98,13 +111,22 @@ fn list_in(dir: &Path) -> Vec<Backup> {
             let md = e.metadata().ok()?;
             let mtime = md.modified().unwrap_or(SystemTime::UNIX_EPOCH);
             let (date, reason) = match NAME.captures(&file) {
-                Some(c) => (format!("{} {}:{}:{}", &c[1], &c[2], &c[3], &c[4]), c[5].to_string()),
+                Some(c) => (
+                    format!("{} {}:{}:{}", &c[1], &c[2], &c[3], &c[4]),
+                    c[5].to_string(),
+                ),
                 None => {
                     let dt: chrono::DateTime<chrono::Local> = mtime.into();
                     (dt.format("%Y-%m-%d %H:%M:%S").to_string(), "other".into())
                 }
             };
-            Some(Backup { path, date, reason, size: md.len(), mtime })
+            Some(Backup {
+                path,
+                date,
+                reason,
+                size: md.len(),
+                mtime,
+            })
         })
         .collect();
     out.sort_by(|a, b| (&b.date, b.mtime).cmp(&(&a.date, a.mtime)));
@@ -143,13 +165,20 @@ fn zip_world(dest: &Path, server: &Path, dirs: &[PathBuf], reason: &str) -> Resu
             walk(d, &mut files);
             files.sort();
             for f in files {
-                if f.file_name().and_then(|n| n.to_str()).is_some_and(|n| SKIP.contains(&n)) {
+                if f.file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| SKIP.contains(&n))
+                {
                     continue;
                 }
-                let Ok(rel) = f.strip_prefix(server) else { continue };
+                let Ok(rel) = f.strip_prefix(server) else {
+                    continue;
+                };
                 let rel = rel.to_string_lossy().replace('\\', "/");
                 // fichier verrouillé par Java : on passe
-                let Ok(data) = std::fs::read(&f) else { continue };
+                let Ok(data) = std::fs::read(&f) else {
+                    continue;
+                };
                 z.start_file(rel, opts)?;
                 z.write_all(&data)?;
             }
@@ -166,7 +195,9 @@ fn zip_world(dest: &Path, server: &Path, dirs: &[PathBuf], reason: &str) -> Resu
 }
 
 fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(rd) = std::fs::read_dir(dir) else { return };
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return;
+    };
     for e in rd.flatten() {
         let p = e.path();
         match e.file_type() {
@@ -194,7 +225,10 @@ pub fn create(
         if dirs.is_empty() {
             bail!("Aucun monde à sauvegarder (le serveur n'a jamais été lancé ?).");
         }
-        log(&format!("── Sauvegarde du monde ({})… ──", reason_label(reason).to_lowercase()));
+        log(&format!(
+            "── Sauvegarde du monde ({})… ──",
+            reason_label(reason).to_lowercase()
+        ));
         let t0 = Instant::now();
         let live = proc.filter(|p| p.status().ready);
         if let Some(p) = live {
@@ -240,7 +274,13 @@ fn safe(rel: &Path) -> bool {
 
 /// Remplace le monde par le zip (serveur arrêté). Le monde actuel est
 /// d'abord sauvegardé (raison « restore »).
-pub fn restore(name: &str, server: &Path, zip_path: &Path, keep: i64, log: &dyn Fn(&str)) -> Result<()> {
+pub fn restore(
+    name: &str,
+    server: &Path,
+    zip_path: &Path,
+    keep: i64,
+    log: &dyn Fn(&str),
+) -> Result<()> {
     let f = std::fs::File::open(zip_path).context("sauvegarde introuvable")?;
     let mut z = zip::ZipArchive::new(f).context("sauvegarde illisible")?;
     let mut members = vec![];
@@ -313,7 +353,9 @@ mod tests {
             zip_world(&dest, &server, &dirs, "auto").unwrap();
         }
         let mut z = zip::ZipArchive::new(std::fs::File::open(&a).unwrap()).unwrap();
-        let names: Vec<String> = (0..z.len()).map(|i| z.by_index(i).unwrap().name().unwrap().to_string()).collect();
+        let names: Vec<String> = (0..z.len())
+            .map(|i| z.by_index(i).unwrap().name().unwrap().to_string())
+            .collect();
         assert_eq!(names, ["world/level.dat", "world_nether/n.dat"]);
         assert_eq!(list_in(&dest).len(), 4);
         assert_eq!(rotate_in(&dest, 1), 2); // 3 auto → 1, la manuelle reste
@@ -333,7 +375,10 @@ mod tests {
         let b = root.join("b");
         std::fs::create_dir_all(&b).unwrap();
         restore("b", &b, &zip, 10, &|_| {}).unwrap();
-        assert_eq!(std::fs::read(b.join("world/region/r.0.0.mca")).unwrap(), b"chunks");
+        assert_eq!(
+            std::fs::read(b.join("world/region/r.0.0.mca")).unwrap(),
+            b"chunks"
+        );
         std::fs::remove_dir_all(root).ok();
     }
 

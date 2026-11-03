@@ -98,7 +98,11 @@ impl ServerProcess {
             starting: st.starting,
             ready: running && st.ready,
             stopping: running && st.stopping,
-            players: if running { st.players.iter().cloned().collect() } else { vec![] },
+            players: if running {
+                st.players.iter().cloned().collect()
+            } else {
+                vec![]
+            },
             uptime: st.started_at.filter(|_| running).map(|t| t.elapsed()),
         }
     }
@@ -107,7 +111,14 @@ impl ServerProcess {
     pub fn start(&self) {
         {
             let mut st = self.state.lock().unwrap();
-            if st.starting || self.child.lock().unwrap().as_mut().is_some_and(|c| matches!(c.try_wait(), Ok(None))) {
+            if st.starting
+                || self
+                    .child
+                    .lock()
+                    .unwrap()
+                    .as_mut()
+                    .is_some_and(|c| matches!(c.try_wait(), Ok(None)))
+            {
                 return;
             }
             st.starting = true;
@@ -172,7 +183,9 @@ impl ServerProcess {
             let mut buf = vec![];
             while r.read_until(b'\n', &mut buf).unwrap_or(0) > 0 {
                 let raw = String::from_utf8_lossy(&buf);
-                let line = ANSI.replace_all(raw.trim_end_matches(['\r', '\n']), "").to_string();
+                let line = ANSI
+                    .replace_all(raw.trim_end_matches(['\r', '\n']), "")
+                    .to_string();
                 buf.clear();
                 me.feed(&line);
             }
@@ -221,9 +234,7 @@ impl ServerProcess {
         let cmd = cmd.trim().trim_start_matches('/');
         let mut stdin = self.stdin.lock().unwrap();
         match stdin.as_mut() {
-            Some(s) if !cmd.is_empty() => {
-                writeln!(s, "{cmd}").and_then(|_| s.flush()).is_ok()
-            }
+            Some(s) if !cmd.is_empty() => writeln!(s, "{cmd}").and_then(|_| s.flush()).is_ok(),
             _ => false,
         }
     }
@@ -280,9 +291,15 @@ impl ServerProcess {
                 if !me.is_running() || me.state.lock().unwrap().started_at != started {
                     return;
                 }
-                let every = meta::load(&me.dir).map(|m| meta::int_of(&m, "backup_interval_min", 0)).unwrap_or(0);
+                let every = meta::load(&me.dir)
+                    .map(|m| meta::int_of(&m, "backup_interval_min", 0))
+                    .unwrap_or(0);
                 let st = me.status();
-                if every > 0 && st.ready && !st.stopping && last.elapsed() >= Duration::from_secs(every as u64 * 60) {
+                if every > 0
+                    && st.ready
+                    && !st.stopping
+                    && last.elapsed() >= Duration::from_secs(every as u64 * 60)
+                {
                     last = Instant::now();
                     me.backup("auto");
                 }
@@ -310,9 +327,9 @@ impl ServerProcess {
         let me = self.clone();
         std::thread::spawn(move || {
             let log = |ev: playit::Event| match ev {
-                playit::Event::Create { label, local } => {
-                    me.log(&format!("Playit : création du tunnel {label} (port local {local})…"))
-                }
+                playit::Event::Create { label, local } => me.log(&format!(
+                    "Playit : création du tunnel {label} (port local {local})…"
+                )),
                 playit::Event::Ready { label, address } => {
                     me.log(&format!("Playit : {label} → {address}"))
                 }
@@ -338,7 +355,10 @@ mod tests {
         p.feed("[12:00:03] [Server thread/INFO]: Steve left the game");
         let st = p.state.lock().unwrap();
         assert!(st.ready);
-        assert_eq!(st.players.iter().cloned().collect::<Vec<_>>(), [".BedrockGuy"]);
+        assert_eq!(
+            st.players.iter().cloned().collect::<Vec<_>>(),
+            [".BedrockGuy"]
+        );
     }
 
     #[test]
@@ -348,7 +368,10 @@ mod tests {
         let (_, seq) = p.lines_since(0);
         p.log("b");
         p.log("c");
-        assert_eq!(p.lines_since(seq), (vec!["b".to_string(), "c".to_string()], 3));
+        assert_eq!(
+            p.lines_since(seq),
+            (vec!["b".to_string(), "c".to_string()], 3)
+        );
     }
 
     #[test]

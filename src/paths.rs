@@ -12,7 +12,9 @@ pub fn app_dir() -> PathBuf {
             return PathBuf::from(d).join("ServerCraftAgent");
         }
     }
-    let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default();
+    let home = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_default();
     home.join(".local/share/ServerCraftAgent")
 }
 

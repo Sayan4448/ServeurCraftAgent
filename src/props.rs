@@ -55,9 +55,16 @@ mod tests {
         let f = dir.join("server.properties");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(&f, "#Minecraft\nmotd=Salut\nserver-port=25565\n").unwrap();
-        update(&f, &[("server-port", "25570".into()), ("pvp", "false".into())]).unwrap();
+        update(
+            &f,
+            &[("server-port", "25570".into()), ("pvp", "false".into())],
+        )
+        .unwrap();
         let text = std::fs::read_to_string(&f).unwrap();
-        assert_eq!(text, "#Minecraft\nmotd=Salut\nserver-port=25570\npvp=false\n");
+        assert_eq!(
+            text,
+            "#Minecraft\nmotd=Salut\nserver-port=25570\npvp=false\n"
+        );
         assert_eq!(load(&f)["server-port"], "25570");
         std::fs::remove_dir_all(dir).ok();
     }
