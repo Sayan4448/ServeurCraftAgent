@@ -15,8 +15,13 @@ Playit.
   commandes, joueurs connectés
 - Playit.gg : liaison du compte, tunnels Java / Bedrock / Voice Chat
   (Simple Voice Chat et Plasmo Voice, adresse écrite dans le mod)
+- Sauvegardes du monde (même format et même dossier `backups/` que la
+  version Python) : bouton « 💾 Sauvegarder » (même serveur lancé :
+  save-off / save-all / save-on), avant chaque arrêt, automatiques toutes
+  les N minutes, rotation des automatiques, restauration (le monde actuel
+  est sauvegardé avant), suppression
 
-Pas encore : cross-play Bedrock, mods/plugins, modpacks, sauvegardes,
+Pas encore : cross-play Bedrock, mods/plugins, modpacks,
 tâches planifiées, inventaire des joueurs, Discord, agent IA, OpenCode,
 autres langues que le français.
 

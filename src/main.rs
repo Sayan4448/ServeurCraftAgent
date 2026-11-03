@@ -1,6 +1,7 @@
 //! ServerCraft Agent — édition Rust (préversion).
 #![cfg_attr(windows, windows_subsystem = "windows")] // pas de console noire
 
+mod backups;
 mod create;
 mod java;
 mod launch;

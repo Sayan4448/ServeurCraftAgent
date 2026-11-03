@@ -10,7 +10,7 @@ use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
-use crate::{launch, meta, playit};
+use crate::{backups, launch, meta, playit};
 
 const MAX_LINES: usize = 4000;
 const STOP_TIMEOUT: Duration = Duration::from_secs(30);
@@ -158,6 +158,7 @@ impl ServerProcess {
         }
         *self.child.lock().unwrap() = Some(child);
         self.waiter();
+        self.auto_backups();
         if m.get("playit_auto").and_then(|v| v.as_bool()) == Some(true) && playit::linked() {
             self.tunnels();
         }
@@ -227,16 +228,66 @@ impl ServerProcess {
         }
     }
 
-    /// Arrêt propre (`stop`), puis kill si le serveur ne s'arrête pas.
+    /// Arrêt propre : sauvegarde (si activée), `stop`, puis kill si le
+    /// serveur ne s'arrête pas.
     pub fn stop(&self) {
-        if !self.is_running() {
-            return;
+        {
+            let mut st = self.state.lock().unwrap();
+            if st.stopping || !self.is_running() {
+                return;
+            }
+            st.stopping = true;
         }
-        self.state.lock().unwrap().stopping = true;
         self.log("── Arrêt demandé… ──");
-        self.send("stop");
         let me = self.clone();
-        std::thread::spawn(move || me.wait_or_kill(STOP_TIMEOUT));
+        std::thread::spawn(move || {
+            let on_stop = meta::load(&me.dir)
+                .ok()
+                .and_then(|m| m.get("backup_on_stop").and_then(|v| v.as_bool()))
+                .unwrap_or(true);
+            if on_stop && me.status().ready {
+                me.backup("stop");
+            }
+            me.send("stop");
+            me.wait_or_kill(STOP_TIMEOUT);
+        });
+    }
+
+    /// Sauvegarde du monde (bloquant : à appeler depuis un thread).
+    pub fn backup(&self, reason: &str) -> Option<PathBuf> {
+        let keep = meta::load(&self.dir)
+            .map(|m| meta::int_of(&m, "backup_keep", backups::DEFAULT_KEEP))
+            .unwrap_or(backups::DEFAULT_KEEP);
+        let log = |s: &str| self.log(s);
+        match backups::create(&self.name, &self.dir, reason, keep, Some(self), &log) {
+            Ok(p) => Some(p),
+            Err(e) => {
+                self.log(&format!("✖ Sauvegarde impossible : {e:#}"));
+                None
+            }
+        }
+    }
+
+    /// Sauvegardes automatiques toutes les `backup_interval_min` minutes
+    /// (0 = jamais), tant que ce lancement du serveur tourne.
+    fn auto_backups(&self) {
+        let me = self.clone();
+        let started = self.state.lock().unwrap().started_at;
+        std::thread::spawn(move || {
+            let mut last = Instant::now();
+            loop {
+                std::thread::sleep(Duration::from_secs(5));
+                if !me.is_running() || me.state.lock().unwrap().started_at != started {
+                    return;
+                }
+                let every = meta::load(&me.dir).map(|m| meta::int_of(&m, "backup_interval_min", 0)).unwrap_or(0);
+                let st = me.status();
+                if every > 0 && st.ready && !st.stopping && last.elapsed() >= Duration::from_secs(every as u64 * 60) {
+                    last = Instant::now();
+                    me.backup("auto");
+                }
+            }
+        });
     }
 
     /// Bloque jusqu'à l'arrêt, kill au-delà de `timeout`.

@@ -27,3 +27,9 @@ pub fn data_dir() -> PathBuf {
 pub fn runtimes_dir() -> PathBuf {
     app_dir().join("runtimes")
 }
+
+/// Hors des dossiers serveur : supprimer ou restaurer un serveur ne touche
+/// pas à ses sauvegardes.
+pub fn backups_dir() -> PathBuf {
+    app_dir().join("backups")
+}

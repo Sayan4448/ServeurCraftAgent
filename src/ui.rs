@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 use crate::create::{self, CreateOptions};
 use crate::meta::{self, ServerInfo};
 use crate::process::{ServerProcess, Status};
-use crate::{loaders, playit};
+use crate::{backups, loaders, playit};
 
 pub const VERSION_LABEL: &str = concat!("v", env!("CARGO_PKG_VERSION"), " Rust · préversion");
 
@@ -109,6 +109,20 @@ struct PlayitDialog {
     busy: Arc<AtomicBool>,
 }
 
+/// Fenêtre Sauvegardes d'un serveur.
+struct BackupsDialog {
+    server: String,
+    dir: PathBuf,
+    list: Vec<backups::Backup>,
+    confirm: Option<(PathBuf, bool)>, // (fichier, true = restaurer)
+    on_stop: bool,
+    interval_min: i64,
+    keep: i64,
+    status: Arc<Mutex<String>>,
+    busy: Arc<AtomicBool>,
+    done: Arc<AtomicBool>,
+}
+
 #[derive(Default)]
 struct App {
     servers: Vec<ServerInfo>,
@@ -120,6 +134,7 @@ struct App {
     create: Option<CreateDialog>,
     playit: Option<PlayitDialog>,
     playit_linked: Option<bool>,
+    backups: Option<BackupsDialog>,
     closing: bool,
 }
 
@@ -162,6 +177,7 @@ impl eframe::App for App {
 
         self.create_window(&ctx);
         self.playit_window(&ctx);
+        self.backups_window(&ctx);
         // threads (console, téléchargements) : on se redessine régulièrement
         ctx.request_repaint_after(Duration::from_millis(250));
     }
@@ -283,6 +299,20 @@ impl App {
                 .clicked()
             {
                 proc.stop();
+            }
+            let saving = backups::busy(&info.name);
+            if ui
+                .add_enabled(!saving, egui::Button::new("💾 Sauvegarder"))
+                .on_hover_text("Copie du monde maintenant (le serveur peut rester lancé)")
+                .clicked()
+            {
+                let p = proc.clone();
+                std::thread::spawn(move || {
+                    p.backup("manual");
+                });
+            }
+            if ui.button("🗂 Sauvegardes").clicked() {
+                self.backups = Some(BackupsDialog::new(&info));
             }
             if ui.button("📁 Dossier").clicked() {
                 if let Err(e) = open::that(&info.dir) {
@@ -470,6 +500,186 @@ impl App {
         if relist {
             self.refresh(true);
         }
+    }
+}
+
+impl App {
+    fn backups_window(&mut self, ctx: &egui::Context) {
+        let Some(d) = self.backups.as_mut() else { return };
+        let running = self.procs.get(&d.server).is_some_and(|p| p.is_running());
+        let proc = self.procs.get(&d.server).cloned();
+        let mut open = true;
+        egui::Window::new(format!("Sauvegardes — {}", d.server))
+            .open(&mut open)
+            .collapsible(false)
+            .default_width(520.0)
+            .show(ctx, |ui| d.show(ui, running, proc));
+        if !open {
+            self.backups = None;
+        }
+    }
+}
+
+impl BackupsDialog {
+    fn new(info: &ServerInfo) -> Self {
+        let m = meta::load(&info.dir).unwrap_or_else(|_| info.meta.clone());
+        Self {
+            server: info.name.clone(),
+            dir: info.dir.clone(),
+            list: backups::list(&info.name),
+            confirm: None,
+            on_stop: m.get("backup_on_stop").and_then(|v| v.as_bool()).unwrap_or(true),
+            interval_min: meta::int_of(&m, "backup_interval_min", 0),
+            keep: meta::int_of(&m, "backup_keep", backups::DEFAULT_KEEP),
+            status: Default::default(),
+            busy: Default::default(),
+            done: Default::default(),
+        }
+    }
+
+    fn show(&mut self, ui: &mut egui::Ui, running: bool, proc: Option<ServerProcess>) {
+        let busy = self.busy.load(Ordering::Relaxed) || backups::busy(&self.server);
+        // ------------------------------------------------------ réglages
+        ui.checkbox(&mut self.on_stop, "Sauvegarder avant chaque arrêt");
+        ui.horizontal(|ui| {
+            ui.label("Sauvegarde automatique toutes les");
+            ui.add(egui::DragValue::new(&mut self.interval_min).range(0..=1440).suffix(" min"));
+            ui.label(RichText::new("(0 = jamais)").color(MUTED));
+        });
+        ui.horizontal(|ui| {
+            ui.label("Garder les");
+            ui.add(egui::DragValue::new(&mut self.keep).range(1..=200));
+            ui.label("dernières sauvegardes automatiques");
+        });
+        ui.horizontal(|ui| {
+            if ui.button("Enregistrer les réglages").clicked() {
+                *self.status.lock().unwrap() = match self.save_settings() {
+                    Ok(()) => "✔ Réglages enregistrés.".into(),
+                    Err(e) => format!("✖ {e:#}"),
+                };
+            }
+            if ui.button("📁 Dossier des sauvegardes").clicked() {
+                let d = backups::backup_dir(&self.server);
+                let _ = std::fs::create_dir_all(&d);
+                let _ = open::that(d);
+            }
+        });
+        ui.label(
+            RichText::new("Les sauvegardes manuelles ne sont jamais supprimées automatiquement.").color(MUTED).small(),
+        );
+        ui.separator();
+
+        // ------------------------------------------------------------ liste
+        if !busy && ui.small_button("⟳ Actualiser").clicked() {
+            self.list = backups::list(&self.server);
+        }
+        if self.list.is_empty() {
+            ui.label(RichText::new("Aucune sauvegarde pour l'instant.").color(MUTED));
+        }
+        let mut action: Option<(PathBuf, bool)> = None;
+        egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
+            egui::Grid::new("backups").num_columns(4).striped(true).spacing([14.0, 6.0]).show(ui, |ui| {
+                for b in &self.list {
+                    ui.label(&b.date);
+                    ui.label(RichText::new(backups::reason_label(&b.reason)).color(MUTED));
+                    ui.label(backups::fmt_size(b.size));
+                    ui.horizontal(|ui| {
+                        let restore_tip = if running {
+                            "Arrêtez d'abord le serveur"
+                        } else {
+                            "Remplace le monde actuel (sauvegardé avant)"
+                        };
+                        if ui
+                            .add_enabled(!running && !busy, egui::Button::new("Restaurer"))
+                            .on_hover_text(restore_tip)
+                            .on_disabled_hover_text(restore_tip)
+                            .clicked()
+                        {
+                            action = Some((b.path.clone(), true));
+                        }
+                        if ui.add_enabled(!busy, egui::Button::new("🗑")).on_hover_text("Supprimer").clicked() {
+                            action = Some((b.path.clone(), false));
+                        }
+                    });
+                    ui.end_row();
+                }
+            });
+        });
+        if action.is_some() {
+            self.confirm = action;
+        }
+
+        // --------------------------------------------------- confirmation
+        if let Some((path, restore)) = self.confirm.clone() {
+            ui.separator();
+            let file = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+            ui.colored_label(
+                ORANGE,
+                if restore {
+                    format!("Restaurer {file} ? Le monde actuel sera remplacé (une sauvegarde en est faite avant).")
+                } else {
+                    format!("Supprimer définitivement {file} ?")
+                },
+            );
+            ui.horizontal(|ui| {
+                if ui.add(egui::Button::new("Confirmer").fill(RED.gamma_multiply(0.5))).clicked() {
+                    self.confirm = None;
+                    if restore {
+                        self.restore(path.clone(), proc.clone());
+                    } else {
+                        *self.status.lock().unwrap() = match std::fs::remove_file(&path) {
+                            Ok(()) => "✔ Sauvegarde supprimée.".into(),
+                            Err(e) => format!("✖ {e}"),
+                        };
+                        self.list = backups::list(&self.server);
+                    }
+                }
+                if ui.button("Annuler").clicked() {
+                    self.confirm = None;
+                }
+            });
+        }
+        let msg = self.status.lock().unwrap().clone();
+        if busy {
+            ui.horizontal(|ui| {
+                ui.spinner();
+                ui.label(if msg.is_empty() { "Sauvegarde en cours…".to_string() } else { msg });
+            });
+        } else if !msg.is_empty() {
+            ui.label(msg);
+        }
+        // restauration terminée : la sauvegarde « avant restauration » apparaît
+        if self.done.swap(false, Ordering::Relaxed) {
+            self.list = backups::list(&self.server);
+        }
+    }
+
+    fn restore(&mut self, path: PathBuf, proc: Option<ServerProcess>) {
+        self.busy.store(true, Ordering::Relaxed);
+        *self.status.lock().unwrap() = "Restauration en cours…".into();
+        let (status, busy, done) = (self.status.clone(), self.busy.clone(), self.done.clone());
+        let (name, dir, keep) = (self.server.clone(), self.dir.clone(), self.keep);
+        std::thread::spawn(move || {
+            let log = |s: &str| {
+                if let Some(p) = &proc {
+                    p.log(s);
+                }
+            };
+            *status.lock().unwrap() = match backups::restore(&name, &dir, &path, keep, &log) {
+                Ok(()) => "✔ Monde restauré.".into(),
+                Err(e) => format!("✖ Restauration impossible : {e:#}"),
+            };
+            busy.store(false, Ordering::Relaxed);
+            done.store(true, Ordering::Relaxed);
+        });
+    }
+
+    fn save_settings(&self) -> anyhow::Result<()> {
+        let mut m = meta::load(&self.dir)?;
+        m.insert("backup_on_stop".into(), self.on_stop.into());
+        m.insert("backup_interval_min".into(), self.interval_min.into());
+        m.insert("backup_keep".into(), self.keep.into());
+        meta::save(&self.dir, &m)
     }
 }
 
