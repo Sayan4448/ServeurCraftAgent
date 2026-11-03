@@ -10,7 +10,8 @@ Playit.
 
 ## Étape 1 (cette branche)
 - Liste des serveurs, création (Paper, Purpur, Fabric, Forge, NeoForge,
-  Mohist), Java trouvé ou téléchargé tout seul
+  Mohist), Java trouvé ou téléchargé tout seul ; comptes crack protégés
+  par mot de passe (AuthMe sur les plugins, EasyAuth sur Fabric)
 - Lancer / arrêter (arrêt propre, puis forcé après 30 s), console avec
   commandes, joueurs connectés
 - Playit.gg : liaison du compte, tunnels Java / Bedrock / Voice Chat

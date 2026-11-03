@@ -335,8 +335,15 @@ impl ServerProcess {
                 }
                 playit::Event::Agent => me.log("Playit : agent lancé"),
             };
-            if let Err(e) = playit::setup_server(&me.name, &me.dir, &log) {
-                me.log(&format!("✖ Playit : {}", playit::explain(&e)));
+            match playit::setup_server(&me.name, &me.dir, &log) {
+                Ok(_) => {
+                    std::thread::sleep(Duration::from_secs(4));
+                    let err = playit::agent_error();
+                    if !err.is_empty() {
+                        me.log(&format!("✖ Agent Playit arrêté : {err}"));
+                    }
+                }
+                Err(e) => me.log(&format!("✖ Playit : {}", playit::explain(&e))),
             }
         });
     }

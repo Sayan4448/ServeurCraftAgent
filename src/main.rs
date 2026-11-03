@@ -7,6 +7,7 @@ mod java;
 mod launch;
 mod loaders;
 mod meta;
+mod modrinth;
 mod net;
 mod paths;
 mod playit;
